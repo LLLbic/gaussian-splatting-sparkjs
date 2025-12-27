@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lethe River - Capture the Moment</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <!-- 主容器 -->
+    <div class="container">
+      <!-- 头部 -->
+      <header class="header">
+        <h1 class="title">Lethe River</h1>
+        <p class="subtitle">Capture the fleeting moment, preserve it for eternity</p>
+        <button class="btn-help" onclick="tutorial.start()" title="查看拍摄教程">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          拍摄教程
+        </button>
+        <button class="btn-icon music-toggle" id="musicToggle" title="背景音乐">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" id="musicIcon">
+            <path d="M9 18V5l12-2v13"></path>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="16" r="3"></circle>
+          </svg>
+        </button>
+      </header>
+
+      <!-- 导航箭头 - 切换到查看器 -->
+      <button class="nav-arrow" id="navArrow" title="查看渲染结果" style="display: flex;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+      </button>
+
+      <!-- 返回按钮 -->
+      <button class="back-button" id="backButton" title="返回首页" style="display: none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+      </button>
+
+
+      <!-- 上传区域 -->
+      <section class="upload-section" id="uploadSection">
+        <div class="card upload-card">
+          <div class="upload-area" id="uploadArea">
+            <svg
+              class="upload-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <h3>Upload Video</h3>
+            <p>Drag and drop or click to select</p>
+            <p class="file-info">Supported: MP4, MOV, AVI (Max 2GB)</p>
+            <input
+              type="file"
+              id="fileInput"
+              accept="video/mp4,video/quicktime,video/x-msvideo"
+              hidden
+            />
+          </div>
+
+          <!-- 文件预览 -->
+          <div class="file-preview" id="filePreview" style="display: none">
+            <div class="preview-info">
+              <svg
+                class="file-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                ></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+              </svg>
+              <div>
+                <p class="file-name" id="fileName"></p>
+                <p class="file-size" id="fileSize"></p>
+              </div>
+            </div>
+            <div class="upload-buttons">
+              <button class="btn btn-primary" onclick="app.uploadFile()">
+                Upload & Process
+              </button>
+              <button class="btn btn-secondary" onclick="app.addMoreVideos()" id="addMoreBtn" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 16px; height: 16px; margin-right: 4px; vertical-align: middle;">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                添加更多视频
+              </button>
+              <button class="btn btn-secondary" onclick="app.clearFile()">
+                Cancel
+              </button>
+            </div>
+          </div>
+          
+          <!-- 已上传视频列表 -->
+          <div class="uploaded-videos-list" id="uploadedVideosList" style="display: none;">
+            <h4 style="margin-bottom: 16px; color: var(--text-primary);">已上传的视频 (<span id="videoCount">0</span>)</h4>
+            <div class="video-items" id="videoItems"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 进度区域 -->
+      <section
+        class="progress-section"
+        id="progressSection"
+        style="display: none"
+      >
+        <div class="card">
+          <h3>Processing Status</h3>
+          <div class="status-info">
+            <div class="status-badge" id="statusBadge">Processing</div>
+            <p class="status-text" id="statusText">Uploading video...</p>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <p class="progress-percent" id="progressPercent">0%</p>
+          <div class="job-info">
+            <p>Job ID: <span id="jobId">-</span></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3D 查看器 -->
+      <section class="viewer-section" id="viewerSection" style="display: none">
+        <div class="viewer-container">
+          <div class="viewer-header">
+            <h3>3D Scene Viewer</h3>
+            <div class="viewer-controls">
+              <button
+                class="icon-btn"
+                onclick="viewer.resetCamera()"
+                title="Reset Camera"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+              <button
+                class="icon-btn"
+                onclick="viewer.toggleFullscreen()"
+                title="Fullscreen"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path
+                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+                  ></path>
+                </svg>
+              </button>
+              <button
+                class="icon-btn"
+                onclick="viewer.takeScreenshot()"
+                title="Screenshot"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path
+                    d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+                  ></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              </button>
+              <button class="btn btn-secondary" onclick="app.startNew()">
+                New Upload
+              </button>
+            </div>
+            
+            <!-- 场景选择器 -->
+            <div class="scene-selector" id="sceneSelector" style="display: none;">
+              <div class="scene-selector-title">🎨 预设场景</div>
+              <div class="scene-buttons">
+                <button class="scene-btn" onclick="viewer.loadDemoScene('bedroom')">
+                  🛏️ 卧室
+                </button>
+                <button class="scene-btn" onclick="viewer.loadDemoScene('fireplace')">
+                  🔥 壁炉
+                </button>
+                <button class="scene-btn" onclick="viewer.loadDemoScene('valley')">
+                  🏔️ 山谷
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="canvas-container" class="canvas-container">
+            <canvas id="viewer-canvas"></canvas>
+          </div>
+          <div class="viewer-info">
+            <p>
+              🖱️ Mouse: Left-click to rotate, Right-click to pan, Scroll to zoom<br>
+              ⌨️ Keyboard: WASD to move, Q/E for up/down
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 页脚 -->
+      <footer class="footer">
+        <p>© 2026 Lethe River</p>
+      </footer>
+    </div>
+
+    <!-- 加载提示 -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+
+    <!-- 通知系统 -->
+    <div class="notification" id="notification"></div>
+
+    <!-- 教程覆盖层 -->
+    <div class="tutorial-overlay" id="tutorialOverlay" style="display: none;">
+      <div class="tutorial-container">
+        <button class="tutorial-close" onclick="tutorial.close()" title="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <div id="tutorialContent"></div>
+      </div>
+    </div>
+
+    <!-- 背景音乐 -->
+    <audio id="bgMusic" loop autoplay>
+      <!-- 欢快愉悦的音乐 - 适合记录美好生活 -->
+      <!-- Kevin MacLeod - Wallpaper (轻快愉悦) -->
+      <source src="music/happy-444082.mp3" type="audio/mpeg">
+      <!-- 备选: 本地音乐文件 src="music/background.mp3" -->
+    </audio>
+
+    <!-- Scripts -->
+    <!-- 使用 cdnjs THREE.js r180 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.180.0/three.module.min.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+            "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.10/spark.module.js"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { SplatMesh } from '@sparkjsdev/spark';
+        
+        // 将 THREE, GLTFLoader, OrbitControls 和 SplatMesh 暴露到全局作用域
+        window.THREE = THREE;
+        window.GLTFLoader = GLTFLoader;
+        window.OrbitControls = OrbitControls;
+        window.SplatMesh = SplatMesh;
+        
+        console.log('THREE.js r180 loaded:', THREE.REVISION);
+        console.log('OrbitControls loaded:', typeof OrbitControls !== 'undefined');
+        console.log('Spark SplatMesh loaded:', typeof SplatMesh !== 'undefined');
+        
+        // 在 THREE 加载完成后再加载其他脚本
+        const scripts = [
+            'js/plyloader.js',
+            'js/particle-shader.js',
+            'js/config.js',
+            'js/api.js',
+            'js/viewer.js',
+            'js/tutorial-demo.js',
+            'js/tutorial.js',
+            'js/app.js'
+        ];
+        
+        function loadScriptsSequentially(scriptUrls, index = 0) {
+            if (index >= scriptUrls.length) {
+                console.log('All scripts loaded');
+                return;
+            }
+            
+            const script = document.createElement('script');
+            script.src = scriptUrls[index];
+            script.onload = () => {
+                console.log(`Loaded: ${scriptUrls[index]}`);
+                loadScriptsSequentially(scriptUrls, index + 1);
+            };
+            script.onerror = () => {
+                console.error(`Failed to load: ${scriptUrls[index]}`);
+                loadScriptsSequentially(scriptUrls, index + 1);
+            };
+            document.body.appendChild(script);
+        }
+        
+        loadScriptsSequentially(scripts);
+    </script>
+  </body>
+</html>
