@@ -113,6 +113,15 @@
             <h4 style="margin-bottom: 16px; color: var(--text-primary);">已上传的视频 (<span id="videoCount">0</span>)</h4>
             <div class="video-items" id="videoItems"></div>
           </div>
+
+          <!-- 快速加载指定场景 (moduleID) -->
+          <div class="module-id-loader" style="margin-top: 24px; padding-top: 24px; border-top: 1px dashed rgba(255,255,255,0.1);">
+            <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 0.9rem;">快速加载已训练场景 (moduleID)</h4>
+            <div style="display: flex; gap: 10px;">
+              <input type="text" id="moduleIDInput" placeholder="输入 moduleID (如: ballroom_scene)" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white;">
+              <button class="btn btn-primary" onclick="app.downloadAndDisplay(document.getElementById('moduleIDInput').value)" style="padding: 8px 16px;">加载</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -212,15 +221,11 @@
 
       <!-- 页脚 -->
       <footer class="footer">
-        <p>© 2026 Lethe River</p>
+        <p style="font-size: 0.8rem; opacity: 0.8; margin-top: 5px;">Powered by Gaussian Splatting</p>
       </footer>
     </div>
 
-    <!-- 加载提示 -->
-    <div class="loading-overlay" id="loadingOverlay" style="display: none">
-      <div class="spinner"></div>
-      <p>Loading...</p>
-    </div>
+
 
     <!-- 通知系统 -->
     <div class="notification" id="notification"></div>
@@ -247,12 +252,12 @@
     </audio>
 
     <!-- Scripts -->
-    <!-- 使用 cdnjs THREE.js r180 -->
+    <!-- 使用 unpkg THREE.js r180 & Spark 0.1.10 -->
     <script type="importmap">
     {
         "imports": {
-            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.180.0/three.module.min.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.178.0/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.178.0/examples/jsm/",
             "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.10/spark.module.js"
         }
     }
@@ -261,26 +266,28 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { SplatMesh } from '@sparkjsdev/spark';
+        import { SplatMesh, dyno } from '@sparkjsdev/spark';
         
-        // 将 THREE, GLTFLoader, OrbitControls 和 SplatMesh 暴露到全局作用域
+        // 将 THREE, GLTFLoader, PLYLoader, OrbitControls, SplatMesh 和 dyno 暴露到全局作用域
         window.THREE = THREE;
         window.GLTFLoader = GLTFLoader;
+        window.PLYLoader = PLYLoader;
         window.OrbitControls = OrbitControls;
         window.SplatMesh = SplatMesh;
+        window.dyno = dyno;
         
-        console.log('THREE.js r180 loaded:', THREE.REVISION);
+        console.log('THREE.js r178 loaded:', THREE.REVISION);
         console.log('OrbitControls loaded:', typeof OrbitControls !== 'undefined');
         console.log('Spark SplatMesh loaded:', typeof SplatMesh !== 'undefined');
         
         // 在 THREE 加载完成后再加载其他脚本
         const scripts = [
-            'js/plyloader.js',
-            'js/particle-shader.js',
             'js/config.js',
             'js/api.js',
             'js/viewer.js',
+            'js/spark-spread.js',
             'js/tutorial-demo.js',
             'js/tutorial.js',
             'js/app.js'
@@ -294,6 +301,7 @@
             
             const script = document.createElement('script');
             script.src = scriptUrls[index];
+            script.type = 'module'; // 设置为模块以支持 import/export
             script.onload = () => {
                 console.log(`Loaded: ${scriptUrls[index]}`);
                 loadScriptsSequentially(scriptUrls, index + 1);

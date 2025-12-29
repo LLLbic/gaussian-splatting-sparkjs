@@ -1,5 +1,8 @@
+
+import { attachSpreading } from './spark-spread.js';
+
 // Three.js 3D 查看器
-const viewer = {
+window.viewer = {
     scene: null,
     camera: null,
     renderer: null,
@@ -7,6 +10,7 @@ const viewer = {
     pointCloud: null,
     currentSplat: null,
     animationId: null,
+    notificationTimeouts: [],
     keyboardControls: {
         forward: false,
         backward: false,
@@ -41,57 +45,12 @@ const viewer = {
     
     // 初始化查看器
     init() {
-        const canvas = document.getElementById('viewer-canvas');
-        const container = document.getElementById('canvas-container');
-        
-        // 创建场景
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(CONFIG.VIEWER.BACKGROUND_COLOR);
-        
-        // 创建相机
-        const aspect = container.clientWidth / container.clientHeight;
-        this.camera = new THREE.PerspectiveCamera(
-            CONFIG.VIEWER.FOV,
-            aspect,
-            CONFIG.VIEWER.NEAR,
-            CONFIG.VIEWER.FAR
-        );
-        this.camera.position.set(
-            CONFIG.VIEWER.CAMERA_POSITION.x,
-            CONFIG.VIEWER.CAMERA_POSITION.y,
-            CONFIG.VIEWER.CAMERA_POSITION.z
-        );
-        
-        // 创建渲染器
-        this.renderer = new THREE.WebGLRenderer({
-            canvas: canvas,
-            antialias: true,
-            alpha: true
-        });
-        this.renderer.setSize(container.clientWidth, container.clientHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        
-        // 添加轨道控制器
-        this.controls = new window.OrbitControls(this.camera, canvas);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.05;
-        this.controls.screenSpacePanning = false;
-        this.controls.minDistance = 1;
-        this.controls.maxDistance = 100;
-        
-        // 添加环境光
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        this.scene.add(ambientLight);
+        this.initRenderer();
         
         // 添加方向光
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(5, 5, 5);
         this.scene.add(directionalLight);
-        
-        // 网格辅助线已移除
-        
-        // 监听窗口大小变化
-        window.addEventListener('resize', () => this.onWindowResize());
         
         // 设置键盘控制
         this.setupKeyboardControls();
@@ -106,6 +65,55 @@ const viewer = {
         }
         
         console.log('Viewer initialized with Spark support');
+    },
+
+    // 初始化 WebGL 渲染器
+    initRenderer() {
+        const container = document.getElementById('canvas-container');
+        const canvas = document.getElementById('viewer-canvas');
+        
+        // 针对 Splatting 优化的渲染器配置
+        this.renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: false, // 关闭抗锯齿以避免纹理格式不匹配问题
+            alpha: false,     // 关闭 alpha 以获得更好的性能和避免合成问题
+            powerPreference: 'high-performance',
+            stencil: false,
+            depth: true
+        });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(container.clientWidth, container.clientHeight);
+        this.renderer.setClearColor(new THREE.Color(0x000000), 1); // 不透明背景
+        
+        // 启用 WebGL 2 特性支持 (虽然 Three.js 默认会自动处理)
+        if (this.renderer.capabilities.isWebGL2) {
+            console.log('WebGL 2 enabled');
+        } else {
+            console.warn('WebGL 2 not available - Splatting may not work correctly');
+        }
+        
+        // 场景与相机
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+        this.camera.position.set(0, 5, 10);
+        
+        // 控制器
+        this.controls = new window.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        
+        // 环境光
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+        this.scene.add(ambientLight);
+        
+        // 处理窗口调整
+        window.addEventListener('resize', () => {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            this.camera.aspect = width / height;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(width, height);
+        });
     },
     
     // 加载 .ply 文件
@@ -132,23 +140,13 @@ const viewer = {
                 geometry.computeVertexNormals();
             }
             
-            // 创建增强的粒子材质（使用自定义着色器）
-            const material = createEnhancedParticleMaterial();
-            
-            // 添加随机缩放属性
-            const count = geometry.attributes.position.count;
-            const scales = new Float32Array(count);
-            const randomness = new Float32Array(count * 3);
-            
-            for (let i = 0; i < count; i++) {
-                scales[i] = Math.random() * 0.5 + 0.5;
-                randomness[i * 3] = (Math.random() - 0.5) * 0.2;
-                randomness[i * 3 + 1] = (Math.random() - 0.5) * 0.2;
-                randomness[i * 3 + 2] = (Math.random() - 0.5) * 0.2;
-            }
-            
-            geometry.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
-            geometry.setAttribute('aRandomness', new THREE.BufferAttribute(randomness, 3));
+            // 创建材质
+            const material = new THREE.PointsMaterial({
+                size: 0.01,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
             
             // 创建点云
             this.pointCloud = new THREE.Points(geometry, material);
@@ -156,12 +154,6 @@ const viewer = {
             
             // 居中并缩放
             this.centerAndScale();
-            
-            // 移除网格辅助线
-            const gridHelper = this.scene.children.find(child => child instanceof THREE.GridHelper);
-            if (gridHelper) {
-                this.scene.remove(gridHelper);
-            }
             
             return true;
         } catch (error) {
@@ -187,8 +179,8 @@ const viewer = {
         const scale = 3 / maxDim;
         this.pointCloud.scale.setScalar(scale);
         
-        // 调整相机
-        this.camera.position.set(0, 0, 5);
+        // 调整初始相机位置
+        this.camera.position.set(0, 0, 5); 
         this.controls.target.set(0, 0, 0);
         this.controls.update();
     },
@@ -289,14 +281,20 @@ const viewer = {
     // 渲染循环
     animate() {
         this.animationId = requestAnimationFrame(() => this.animate());
-        
-        // 更新键盘控制的相机移动
+
+        // 更新键盘控制
         this.updateCameraPosition();
         
         if (this.controls) {
             this.controls.update();
         }
         
+        // Update splat uniforms/effects
+        if (this.currentSplat) {
+            this.currentSplat.updateVersion();
+        }
+
+        // 渲染每一帧
         if (this.renderer && this.scene && this.camera) {
             this.renderer.render(this.scene, this.camera);
         }
@@ -346,94 +344,89 @@ const viewer = {
     },
     
     // 加载演示场景
-    loadDemoScene(sceneKey) {
+    async loadDemoScene(sceneKey) {
         const sceneConfig = this.demoScenes[sceneKey];
-        if (!sceneConfig) {
-            console.error('Unknown scene:', sceneKey);
-            return;
+        if (!sceneConfig) return;
+        
+        console.log('Loading scene: ' + sceneConfig.name);
+        window.showNotification('正在渲染...', 'info');
+        
+        // 1. 清理
+        this.clearViewer();
+        
+        try {
+            if (!window.SplatMesh) throw new Error('Spark SplatMesh engine not loaded');
+
+            // 2. 创建 SplatMesh
+            const splat = new window.SplatMesh({ 
+                url: sceneConfig.url,
+                stream: true 
+            });
+            
+            // 3. 变换
+            splat.rotation.x = Math.PI;
+
+            // Apply Spread effect
+            const controller = attachSpreading(splat, {
+                effectType: 'Magic',
+                speed: 1.0,
+                soft: 0.5,
+                opacityScale: 1.0,
+                // Optional: blend color for the edge
+                colorBlend: { enabled: true, color: [0.2, 0.6, 1.0], strength: 0.5 },
+                // Time source auto uses performance.now()
+                timeSource: 'auto',
+                // New options
+                duration: sceneConfig.renderSettings?.duration ?? 10.0,
+                maxRadius: sceneConfig.renderSettings?.maxRadius ?? 10.0,
+                onComplete: (timeTaken) => {
+                    window.showNotification(`渲染完成 (耗时: ${timeTaken.toFixed(2)}s)`, 'success');
+                }
+            }).__spreadController;
+            
+            // Reset time to start effect from 0
+            controller.reset();
+
+            this.scene.add(splat);
+            this.currentSplat = splat;
+            
+            // 5. 相机设置
+            if (sceneConfig.camera) {
+                const c = sceneConfig.camera;
+                const l = sceneConfig.lookAt || { x: 0, y: 0, z: 0 };
+                this.camera.position.set(c.x, c.y, c.z);
+                this.controls.target.set(l.x, l.y, l.z);
+            }
+            this.controls.update();
+
+        } catch (err) {
+            console.error('Error loading scene:', err);
+            window.showNotification('Load failed: ' + err.message, 'error');
         }
-        
-        console.log('Loading demo scene:', sceneConfig.name);
-        showLoading('加载场景: ' + sceneConfig.name);
-        
-        // 移除旧的点云或Splat
+    },
+    
+    // 辅助方法：清理查看器
+    clearViewer() {
+        // 清除所有待处理的通知
+        if (this.notificationTimeouts) {
+            this.notificationTimeouts.forEach(id => clearTimeout(id));
+            this.notificationTimeouts = [];
+        }
+
         if (this.pointCloud) {
             this.scene.remove(this.pointCloud);
-            this.pointCloud.geometry.dispose();
-            this.pointCloud.material.dispose();
+            if (this.pointCloud.geometry) this.pointCloud.geometry.dispose();
+            if (this.pointCloud.material) this.pointCloud.material.dispose();
             this.pointCloud = null;
         }
         
         if (this.currentSplat) {
             this.scene.remove(this.currentSplat);
+            if (typeof this.currentSplat.dispose === 'function') {
+                this.currentSplat.dispose();
+            }
             this.currentSplat = null;
         }
-        
-        // 检查SplatMesh是否可用
-        if (typeof window.SplatMesh === 'undefined') {
-            showNotification('Spark库未加载，无法加载场景', 'error');
-            hideLoading();
-            return;
-        }
-        
-        // 创建Spark SplatMesh
-        const splat = new window.SplatMesh({ url: sceneConfig.url });
-        
-        // 修正场景方向
-        splat.rotation.x = Math.PI;
-        
-        // 设置相机位置
-        this.camera.position.set(
-            sceneConfig.camera.x,
-            sceneConfig.camera.y,
-            sceneConfig.camera.z
-        );
-        
-        // 设置观察目标
-        if (sceneConfig.lookAt) {
-            this.controls.target.set(
-                sceneConfig.lookAt.x,
-                sceneConfig.lookAt.y,
-                sceneConfig.lookAt.z
-            );
-        }
-        
-        this.controls.update();
-        
-        // 添加到场景
-        this.scene.add(splat);
-        this.currentSplat = splat;
-        
-        // 监听加载完成
-        let loaded = false;
-        
-        splat.addEventListener('load', () => {
-            if (!loaded) {
-                loaded = true;
-                console.log('Scene loaded:', sceneConfig.name);
-                hideLoading();
-                showNotification('场景加载完成: ' + sceneConfig.name, 'success');
-            }
-        });
-        
-        // 轮询检查
-        const checkLoaded = setInterval(() => {
-            if (splat.isLoaded && !loaded) {
-                loaded = true;
-                hideLoading();
-                showNotification('场景加载完成: ' + sceneConfig.name, 'success');
-                clearInterval(checkLoaded);
-            }
-        }, 100);
-        
-        // 超时保护
-        setTimeout(() => {
-            if (!loaded) {
-                loaded = true;
-                hideLoading();
-                clearInterval(checkLoaded);
-            }
-        }, 15000);
     },
     
     // 清理资源
@@ -453,30 +446,3 @@ const viewer = {
         }
     }
 };
-
-// PLYLoader 实现（简化版）
-if (typeof THREE !== 'undefined') {
-    THREE.PLYLoader = function() {};
-    THREE.PLYLoader.prototype = {
-        parse: function(data) {
-            const geometry = new THREE.BufferGeometry();
-            const dataView = new DataView(data);
-            
-            // 这里需要实现完整的 PLY 解析
-            // 简化版：假设数据已经是正确格式
-            // 实际使用时应该使用完整的 PLYLoader 库
-            
-            // 示例：创建一个简单的点云用于测试
-            const vertices = [];
-            const colors = [];
-            
-            // 解析 PLY 头部和数据
-            // ... (实际实现需要完整的 PLY 解析逻辑)
-            
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            
-            return geometry;
-        }
-    };
-}

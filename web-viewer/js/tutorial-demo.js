@@ -1,5 +1,5 @@
 // Three.js 3D 教程演示
-const tutorialDemo = {
+window.tutorialDemo = {
     scene: null,
     camera: null,
     renderer: null,

@@ -1,0 +1,16 @@
+{
+  "name": "web-viewer",
+  "version": "1.0.0",
+  "description": "现代化的 Three.js Gaussian Splatting 3D 查看器，支持视频上传、自动服务器处理和实时 3D 可视化。",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module"
+}

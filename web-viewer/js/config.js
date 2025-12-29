@@ -1,5 +1,5 @@
 // 配置文件
-const CONFIG = {
+window.CONFIG = {
     // 服务器配置（预设，无需用户配置）
     // ⚠️ 重要：请在此处填写您的实际服务器地址
     SERVER_IP: 'http://your-server-ip:5000', // 修改为您的服务器地址，例如: 'http://192.168.1.100:5000'
@@ -35,7 +35,15 @@ const CONFIG = {
 };
 
 // 获取完整的 API URL
-function getApiUrl(endpoint) {
-    // 直接使用预设的服务器地址
-    return CONFIG.SERVER_IP + endpoint;
+window.getApiUrl = function(endpoint) {
+    // 如果 SERVER_IP 包含 'your-server-ip'，则自动使用当前页面的域名
+    const base = window.CONFIG.SERVER_IP.includes('your-server-ip') 
+        ? window.location.origin 
+        : window.CONFIG.SERVER_IP;
+    return base + endpoint;
 }
+
+// 修改 CONFIG.SERVER_IP 的默认逻辑，使其在 downloadResult 中也能正确工作
+window.BASE_URL = window.CONFIG.SERVER_IP.includes('your-server-ip') 
+    ? window.location.origin 
+    : window.CONFIG.SERVER_IP;

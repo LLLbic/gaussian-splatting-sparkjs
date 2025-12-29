@@ -1,5 +1,5 @@
 // 教程系统
-const tutorial = {
+window.tutorial = {
     currentStep: 0,
     totalSteps: 5,
     isActive: false,

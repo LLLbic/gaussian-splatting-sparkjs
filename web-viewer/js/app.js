@@ -1,5 +1,5 @@
 // 主应用逻辑
-const app = {
+window.app = {
     currentFile: null,
     currentJobId: null,
     pollingInterval: null,
@@ -10,6 +10,20 @@ const app = {
         this.setupEventListeners();
         this.setupMusic();
         this.setupNavigation();
+        this.checkUrlParams(); // 检查 URL 参数
+    },
+
+    // 检查 URL 参数中的 moduleID
+    checkUrlParams() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const moduleID = urlParams.get('moduleID');
+        if (moduleID) {
+            console.log('Detected moduleID in URL:', moduleID);
+            // 延迟一会等组件加载完
+            setTimeout(() => {
+                this.downloadAndDisplay(moduleID);
+            }, 500);
+        }
     },
     
     // 设置事件监听器
@@ -261,12 +275,17 @@ const app = {
     },
     
     // 下载并显示结果
-    async downloadAndDisplay() {
+    async downloadAndDisplay(moduleID = null) {
         try {
-            showLoading(true);
+            // 如果传入了 moduleID，则使用 it；否则使用当前 job ID
+            const targetScene = moduleID || this.currentJobId;
             
+            if (!targetScene) {
+                throw new Error("未指定场景 ID (moduleID) 或 Job ID");
+            }
+
             // 下载 .ply 文件
-            const plyData = await api.downloadResult(this.currentJobId);
+            const plyData = await api.downloadResult(targetScene);
             
             // 初始化查看器
             if (!viewer.scene) {
@@ -279,14 +298,13 @@ const app = {
             // 显示查看器
             this.showSection('viewerSection');
             this.hideSection('progressSection');
+            this.hideSection('uploadSection'); // 确保隐藏上传区域
             
-            showLoading(false);
-            showNotification('3D model loaded successfully!', 'success');
+            showNotification(`场景 "${targetScene}" 加载成功！`, 'success');
             
         } catch (error) {
             console.error('Display error:', error);
-            showLoading(false);
-            showNotification('Failed to load 3D model: ' + error.message, 'error');
+            showNotification('无法加载 3D 模型: ' + error.message, 'error');
         }
     },
     
@@ -424,41 +442,27 @@ const app = {
     }
 };
 
+let notificationTimeout;
+
 // 显示通知
 function showNotification(message, type = 'info') {
     const notification = document.getElementById('notification');
+    
+    // 清除之前的定时器
+    if (notificationTimeout) {
+        clearTimeout(notificationTimeout);
+    }
+    
     notification.textContent = message;
     notification.className = 'notification ' + type + ' show';
     
-    setTimeout(() => {
+    notificationTimeout = setTimeout(() => {
         notification.classList.remove('show');
     }, 3000);
 }
 
-// 显示/隐藏加载遮罩
-function showLoading(messageOrShow) {
-    const overlay = document.getElementById('loadingOverlay');
-    if (typeof messageOrShow === 'boolean') {
-        overlay.style.display = messageOrShow ? 'flex' : 'none';
-    } else if (typeof messageOrShow === 'string') {
-        overlay.style.display = 'flex';
-        const loadingText = overlay.querySelector('p');
-        if (loadingText) {
-            loadingText.textContent = messageOrShow;
-        }
-    } else {
-        overlay.style.display = 'flex';
-    }
-}
-
-function hideLoading() {
-    const overlay = document.getElementById('loadingOverlay');
-    overlay.style.display = 'none';
-    const loadingText = overlay.querySelector('p');
-    if (loadingText) {
-        loadingText.textContent = 'Loading...';
-    }
-}
+// Make showNotification global so it can be used by viewer.js
+window.showNotification = showNotification;
 
 // 页面加载完成后初始化
 if (document.readyState === 'loading') {

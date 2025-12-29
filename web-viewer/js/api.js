@@ -1,5 +1,5 @@
 // API 通信模块
-const api = {
+window.api = {
     // 上传视频文件
     async uploadVideo(file, onProgress) {
         try {
@@ -61,20 +61,38 @@ const api = {
         }
     },
     
-    // 下载结果文件
-    async downloadResult(jobId) {
+    // 从项目目录下载结果文件 (.ply)
+    async downloadResult(moduleID) {
         try {
-            const url = getApiUrl(CONFIG.ENDPOINTS.DOWNLOAD + '/' + jobId);
-            const response = await fetch(url);
+            // 使用 config.js 中计算出的 BASE_URL
+            const base = typeof BASE_URL !== 'undefined' ? BASE_URL : CONFIG.SERVER_IP;
             
-            if (!response.ok) {
-                throw new Error(`Download failed: ${response.status}`);
+            // 优先从 datasets 目录查找 (用户指定)
+            // 路径 1: datasets/<moduleID>/point_cloud.ply (手动放入)
+            const datasetsUrl = `${base}/datasets/${moduleID}/point_cloud.ply`;
+            // 路径 2: datasets/<moduleID>/sparse/0/points3D.ply (COLMAP 结果)
+            const sparseUrl = `${base}/datasets/${moduleID}/sparse/0/points3D.ply`;
+            // 路径 3: datasets/<moduleID>/point_cloud/iteration_30000/point_cloud.ply
+            const trainUrl = `${base}/datasets/${moduleID}/point_cloud/iteration_30000/point_cloud.ply`;
+            
+            // 同时也检查根目录下的 output 目录 (训练输出的默认位置)
+            const outputUrl = `${base}/output/${moduleID}/point_cloud/iteration_30000/point_cloud.ply`;
+
+            const paths = [datasetsUrl, sparseUrl, trainUrl, outputUrl];
+
+            for (const url of paths) {
+                try {
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        return await response.blob();
+                    }
+                } catch (e) {
+                    console.warn(`Failed to fetch from ${url}:`, e);
+                }
             }
-            
-            // 返回 Blob 数据
-            return await response.blob();
+            throw new Error('无法在 datasets 或 output 目录中找到该场景的模型文件 (.ply)');
         } catch (error) {
-            throw new Error(`Download error: ${error.message}`);
+            throw new Error(`下载错误: ${error.message}`);
         }
     },
     
