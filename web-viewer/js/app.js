@@ -167,6 +167,10 @@ window.app = {
                 // 显示导航箭头，隐藏返回按钮
                 if (navArrow) navArrow.style.display = 'flex';
                 backButton.style.display = 'none';
+
+                if (viewer.scene && typeof viewer.clearViewer === 'function') {
+                    viewer.clearViewer();
+                }
             });
         }
     },
@@ -284,21 +288,50 @@ window.app = {
                 throw new Error("未指定场景 ID (moduleID) 或 Job ID");
             }
 
-            // 下载 .ply 文件
-            const plyData = await api.downloadResult(targetScene);
-            
-            // 初始化查看器
-            if (!viewer.scene) {
-                viewer.init();
+            // 0. 检查是否为预设演示场景
+            if (window.viewer && window.viewer.demoScenes && window.viewer.demoScenes[targetScene]) {
+                console.log(`Loading preset demo scene: ${targetScene}`);
+
+                this.showSection('viewerSection');
+                this.hideSection('progressSection');
+                this.hideSection('uploadSection');
+
+                if (!viewer.scene) viewer.init();
+                if (typeof viewer.onWindowResize === 'function') {
+                    requestAnimationFrame(() => viewer.onWindowResize());
+                    setTimeout(() => viewer.onWindowResize(), 650);
+                }
+
+                await viewer.loadDemoScene(targetScene);
+
+                if (typeof viewer.onWindowResize === 'function') {
+                    requestAnimationFrame(() => viewer.onWindowResize());
+                }
+                return;
             }
+            // 1. 获取动态 URL
+            const modelUrl = await api.getModuleModelUrl(targetScene);
             
-            // 加载 .ply 文件
-            await viewer.loadPLY(plyData);
-            
-            // 显示查看器
             this.showSection('viewerSection');
             this.hideSection('progressSection');
             this.hideSection('uploadSection'); // 确保隐藏上传区域
+
+            // 2. 初始化查看器
+            if (!viewer.scene) {
+                viewer.init();
+            }
+            if (typeof viewer.onWindowResize === 'function') {
+                requestAnimationFrame(() => viewer.onWindowResize());
+                setTimeout(() => viewer.onWindowResize(), 650);
+            }
+            
+            // 3. 流式加载
+            showNotification(`正在流式加载模型 (支持边下边看)...`, 'info');
+            await viewer.loadSceneUrl(modelUrl);
+
+            if (typeof viewer.onWindowResize === 'function') {
+                requestAnimationFrame(() => viewer.onWindowResize());
+            }
             
             showNotification(`场景 "${targetScene}" 加载成功！`, 'success');
             
@@ -376,8 +409,8 @@ window.app = {
         
         this.clearFile();
         
-        if (viewer.scene) {
-            viewer.dispose();
+        if (viewer.scene && typeof viewer.clearViewer === 'function') {
+            viewer.clearViewer();
         }
     },
     

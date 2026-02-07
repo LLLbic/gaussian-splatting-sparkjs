@@ -1,5 +1,6 @@
 
 import { attachSpreading } from './spark-spread.js';
+import { utils } from '@sparkjsdev/spark';
 
 // Three.js 3D 查看器
 window.viewer = {
@@ -19,7 +20,7 @@ window.viewer = {
         up: false,
         down: false
     },
-    moveSpeed: 0.1,
+    moveSpeed: 0.05,
     
     // 演示场景配置
     demoScenes: {
@@ -83,7 +84,7 @@ window.viewer = {
         });
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(container.clientWidth, container.clientHeight);
-        this.renderer.setClearColor(new THREE.Color(0x000000), 1); // 不透明背景
+        this.renderer.setClearColor(new THREE.Color(0x505050), 1); // 改为中灰色，更容易分辨黑色模型和背景
         
         // 启用 WebGL 2 特性支持 (虽然 Three.js 默认会自动处理)
         if (this.renderer.capabilities.isWebGL2) {
@@ -116,73 +117,170 @@ window.viewer = {
         });
     },
     
-    // 加载 .ply 文件
-    async loadPLY(data) {
-        try {
-            // 移除旧的点云
-            if (this.pointCloud) {
-                this.scene.remove(this.pointCloud);
-                this.pointCloud.geometry.dispose();
-                this.pointCloud.material.dispose();
+    // 清理查看器
+    clearViewer() {
+        if (this.pointCloud) {
+            this.scene.remove(this.pointCloud);
+            // 检查是否有 dispose 方法 (SplatMesh 有)
+            if (this.pointCloud.dispose) {
+                this.pointCloud.dispose();
+            } else {
+                if (this.pointCloud.geometry) this.pointCloud.geometry.dispose();
+                if (this.pointCloud.material) this.pointCloud.material.dispose();
             }
-            
-            // 使用 PLYLoader 加载
-            const loader = new THREE.PLYLoader();
-            
-            // 将 Blob 转换为 ArrayBuffer
-            const arrayBuffer = await data.arrayBuffer();
-            
-            // 解析 PLY
-            const geometry = loader.parse(arrayBuffer);
-            
-            // 计算法线（如果没有）
-            if (!geometry.attributes.normal) {
-                geometry.computeVertexNormals();
-            }
-            
-            // 创建材质
-            const material = new THREE.PointsMaterial({
-                size: 0.01,
-                vertexColors: true,
-                transparent: true,
-                opacity: 0.8
-            });
-            
-            // 创建点云
-            this.pointCloud = new THREE.Points(geometry, material);
-            this.scene.add(this.pointCloud);
-            
-            // 居中并缩放
-            this.centerAndScale();
-            
-            return true;
-        } catch (error) {
-            console.error('Error loading PLY:', error);
-            throw new Error('Failed to load 3D model');
+            this.pointCloud = null;
+            this.currentSplat = null;
         }
     },
-    
-    // 居中并缩放模型
-    centerAndScale() {
+
+    // 通过 URL 加载场景 (支持流式加载，更快)
+    async loadSceneUrl(url) {
+        try {
+
+                        
+            this.clearViewer();
+            
+            console.log("Loading SplatMesh from URL (streaming):", url);
+            
+            if (!window.SplatMesh) throw new Error("SplatMesh not loaded");
+            
+            // 使用 Spark SplatMesh 加载 (启用流式传输)
+            const splatMesh = new window.SplatMesh({ 
+                url: url,
+                stream: true
+            });
+            
+            // 等待初始化完成 (只需读取头部信息)
+            await splatMesh.initialized;
+            
+            // 修正旋转：Gaussian Splatting 的 PLY 通常需要沿 X 轴旋转 180 度才能正确定向
+            splatMesh.rotation.x = Math.PI;
+
+            // Apply Spread effect
+            const controller = attachSpreading(splatMesh, {
+                effectType: 'Magic',
+                speed: 1.0,
+                soft: 0.5,
+                opacityScale: 1.0,
+                // Optional: blend color for the edge
+                colorBlend: { enabled: true, color: [0.2, 0.6, 1.0], strength: 0.5 },
+                // Time source auto uses performance.now()
+                timeSource: 'auto',
+                onComplete: (timeTaken) => {
+                    window.showNotification(`渲染完成 (耗时: ${timeTaken.toFixed(2)}s)`, 'success');
+                }
+            }).__spreadController;
+            
+            // Reset time to start effect from 0
+            controller.reset();
+            
+            this.pointCloud = splatMesh;
+            this.currentSplat = splatMesh;
+            this.scene.add(splatMesh);
+            
+            // 居中并缩放相机
+            this.fitCameraToMesh();
+            this.controls.update();
+            return true;
+        } catch (error) {
+            console.error('Error loading scene from URL:', error);
+            throw new Error(`Failed to load 3D model: ${error.message}`);
+        }
+    },
+
+    // 调整相机以适应模型 (替代 centerAndScale，避免缩放导致 splat 消失)
+    fitCameraToMesh() {
         if (!this.pointCloud) return;
         
         // 计算包围盒
-        const box = new THREE.Box3().setFromObject(this.pointCloud);
-        const center = box.getCenter(new THREE.Vector3());
+        let box = new THREE.Box3();
+        if (this.pointCloud.getBoundingBox) {
+             // SplatMesh
+            box = this.pointCloud.getBoundingBox();
+        } else {
+            // THREE.Points
+            box.setFromObject(this.pointCloud);
+        }
+        
+        let center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        
-        // 居中
-        this.pointCloud.position.sub(center);
-        
-        // 缩放以适应视图
+
+        if (this.pointCloud?.packedSplats?.packedArray && typeof utils?.unpackSplat === 'function') {
+            const packedArray = this.pointCloud.packedSplats.packedArray;
+            const numSplats = this.pointCloud.numSplats ?? this.pointCloud.packedSplats.numSplats ?? Math.floor(packedArray.length / 4);
+            const sampleCount = Math.min(10000, numSplats);
+            const maxAttempts = 50;
+
+            if (numSplats > 0 && sampleCount > 0) {
+                const sampleCenter = () => {
+                    const b = new THREE.Box3().makeEmpty();
+                    for (let i = 0; i < sampleCount; i++) {
+                        const idx = Math.floor(Math.random() * numSplats);
+                        const { center: c } = utils.unpackSplat(packedArray, idx);
+                        b.expandByPoint(c);
+                    }
+                    return b.getCenter(new THREE.Vector3());
+                };
+
+                for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                    const c1 = sampleCenter();
+                    const c2 = sampleCenter();
+                    if (c1.distanceTo(c2) <= 1.0) {
+                        center = c1.add(c2).multiplyScalar(0.5);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 检查是否有异常值
+        if (isNaN(center.x)) {
+            console.warn("[Debug] 检测到异常的中心点坐标，强制重置为原点");
+            center.set(0, 0, 0);
+        }
+
         const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 3 / maxDim;
-        this.pointCloud.scale.setScalar(scale);
         
-        // 调整初始相机位置
-        this.camera.position.set(0, 0, 5); 
-        this.controls.target.set(0, 0, 0);
+        // 限制 maxDim 的范围，防止相机飞得太远
+        const safeMaxDim = Math.min(Math.max(maxDim, 0.1), 1000);
+        
+        // 1. 添加包围盒辅助线 (BoxHelper)
+        if (this.boxHelper) this.scene.remove(this.boxHelper);
+        this.boxHelper = new THREE.BoxHelper(this.pointCloud, 0xffff00); // 黄色辅助线
+        this.scene.add(this.boxHelper);
+
+        // 不再缩放或移动模型，而是移动相机
+        this.pointCloud.position.set(0, 0, 0);
+        this.pointCloud.scale.set(1, 1, 1);
+        
+        // 设置相机控制器的焦点为模型中心
+        this.controls.target.copy(center);
+        
+        // 计算合适的相机距离
+        const fov = this.camera.fov * (Math.PI / 180);
+        let cameraDistance = Math.abs(safeMaxDim / 2 / Math.tan(fov / 2));
+        
+        // 稍微拉远一点，留出边距 (2.0倍)
+        cameraDistance *= 2.0;
+        
+        // 设置相机位置：在中心点后方/上方
+        const direction = new THREE.Vector3(0, 0.5, 1).normalize();
+        this.camera.position.copy(center).add(direction.multiplyScalar(0.001*cameraDistance));
+        
+        // 确保相机不被裁剪
+        this.camera.near = 0.01;
+        this.camera.far = Math.max(cameraDistance * 10, 2000);
+        this.camera.updateProjectionMatrix();
+
         this.controls.update();
+        
+        console.log("[Debug] 相机已适配。位置:", this.camera.position, "目标:", this.controls.target, "距离:", cameraDistance);
+
+        // 强制设置材质不透明度，防止被效果误伤
+        if (this.pointCloud.material) {
+            this.pointCloud.material.opacity = 1.0;
+            this.pointCloud.material.transparent = true;
+        }
     },
     
     // 设置键盘控制
@@ -378,7 +476,7 @@ window.viewer = {
                 timeSource: 'auto',
                 // New options
                 duration: sceneConfig.renderSettings?.duration ?? 10.0,
-                maxRadius: sceneConfig.renderSettings?.maxRadius ?? 10.0,
+                maxRadius: sceneConfig.renderSettings?.maxRadius ?? 500.0,
                 onComplete: (timeTaken) => {
                     window.showNotification(`渲染完成 (耗时: ${timeTaken.toFixed(2)}s)`, 'success');
                 }

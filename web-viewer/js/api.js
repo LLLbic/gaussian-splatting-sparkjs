@@ -61,36 +61,74 @@ window.api = {
         }
     },
     
-    // 从项目目录下载结果文件 (.ply)
-    async downloadResult(moduleID) {
+    // 获取场景模型文件的 URL (不下载)
+    async getModuleModelUrl(moduleID) {
         try {
             // 使用 config.js 中计算出的 BASE_URL
             const base = typeof BASE_URL !== 'undefined' ? BASE_URL : CONFIG.SERVER_IP;
+            let dynamicOutputUrl = null;
             
-            // 优先从 datasets 目录查找 (用户指定)
-            // 路径 1: datasets/<moduleID>/point_cloud.ply (手动放入)
-            const datasetsUrl = `${base}/datasets/${moduleID}/point_cloud.ply`;
-            // 路径 2: datasets/<moduleID>/sparse/0/points3D.ply (COLMAP 结果)
-            const sparseUrl = `${base}/datasets/${moduleID}/sparse/0/points3D.ply`;
-            // 路径 3: datasets/<moduleID>/point_cloud/iteration_30000/point_cloud.ply
-            const trainUrl = `${base}/datasets/${moduleID}/point_cloud/iteration_30000/point_cloud.ply`;
-            
-            // 同时也检查根目录下的 output 目录 (训练输出的默认位置)
-            const outputUrl = `${base}/output/${moduleID}/point_cloud/iteration_30000/point_cloud.ply`;
-
-            const paths = [datasetsUrl, sparseUrl, trainUrl, outputUrl];
-
-            for (const url of paths) {
-                try {
-                    const response = await fetch(url);
-                    if (response.ok) {
-                        return await response.blob();
+            try {
+                // 1. 尝试通过 API 获取目录列表 (优先尝试直接在 datasets/<moduleID> 下找)
+                const listDirsUrl = `${base}/api/list-dirs?path=datasets/${moduleID}`;
+                console.log(`Resolving model path for ${moduleID} via API...`);
+                
+                const listResp = await fetch(listDirsUrl);
+                if (listResp.ok) {
+                    const data = await listResp.json();
+                    if (data.directories && data.directories.length > 0) {
+                        // 寻找最像输出目录的文件夹 (例如以 output 开头，或者排除掉 input/images 等)
+                        const outputDirName = data.directories.find(d => d.startsWith('output')) || 
+                                             data.directories.find(d => !['images', 'input', 'distorted'].includes(d)) ||
+                                             data.directories[0];
+                        
+                        dynamicOutputUrl = `${base}/datasets/${moduleID}/${outputDirName}/point_cloud/iteration_30000/point_cloud.ply`;
+                        console.log(`Resolved model URL via API: ${dynamicOutputUrl}`);
+                        return dynamicOutputUrl;
                     }
-                } catch (e) {
-                    console.warn(`Failed to fetch from ${url}:`, e);
+                }
+            } catch (e) {
+                console.warn('API list-dirs failed or server unreachable, trying fallback paths...', e);
+            }
+
+            // 2. 兜底逻辑：如果 API 失败（如 ERR_CONNECTION_REFUSED），尝试常见的默认路径
+            // 这种方式不需要 API 支持，只要静态文件服务器能访问到即可
+            const commonOutputs = ['output1', 'output2', 'output', 'd192f0c7-1']; 
+            for (const outputDir of commonOutputs) {
+                const testUrl = `${base}/datasets/${moduleID}/${outputDir}/point_cloud/iteration_30000/point_cloud.ply`;
+                try {
+                    // 使用 HEAD 请求检查文件是否存在，比 GET 更轻量
+                    const checkResp = await fetch(testUrl, { method: 'HEAD' });
+                    if (checkResp.ok) {
+                        console.log(`Resolved model URL via fallback: ${testUrl}`);
+                        return testUrl;
+                    }
+                } catch (err) {
+                    // 忽略错误，继续尝试下一个
                 }
             }
-            throw new Error('无法在 datasets 或 output 目录中找到该场景的模型文件 (.ply)');
+            
+            throw new Error('无法通过 API 或兜底路径找到该场景的模型文件');
+        } catch (error) {
+            throw new Error(`Path resolution error: ${error.message}`);
+        }
+    },
+
+    // 从项目目录下载结果文件 (.ply)
+    async downloadResult(moduleID) {
+        try {
+            const url = await this.getModuleModelUrl(moduleID);
+            
+            try {
+                const response = await fetch(url);
+                if (response.ok) {
+                    return await response.blob();
+                }
+            } catch (e) {
+                console.warn(`Failed to fetch from ${url}:`, e);
+            }
+
+            throw new Error('无法下载模型文件');
         } catch (error) {
             throw new Error(`下载错误: ${error.message}`);
         }

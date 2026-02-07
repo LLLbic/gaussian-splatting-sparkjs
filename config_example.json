@@ -1,0 +1,22 @@
+{
+    "video_path": "datasets/example_video.mp4",
+    "scene_name": "my_scene",
+    "output_base": "datasets",
+    "fps": 2,
+    "quality": 1,
+    "no_gpu": false,
+    "resize": false,
+    "colmap_executable": "",
+    "generate_depth": false,
+    "depth_anything_path": "",
+    "render": true,
+    "training": {
+        "iterations": 30000,
+        "eval": false,
+        "resolution": 1,
+        "optimizer_type": "default",
+        "antialiasing": false,
+        "exposure_compensation": false,
+        "model_path": ""
+    }
+}

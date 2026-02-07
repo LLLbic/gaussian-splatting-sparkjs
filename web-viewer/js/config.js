@@ -1,8 +1,8 @@
 // 配置文件
 window.CONFIG = {
     // 服务器配置（预设，无需用户配置）
-    // ⚠️ 重要：请在此处填写您的实际服务器地址
-    SERVER_IP: 'http://your-server-ip:5000', // 修改为您的服务器地址，例如: 'http://192.168.1.100:5000'
+    // ⚠️ 重要：请在此处填写您的实际服务器地址。如果 web-viewer 与 datasets 在同一目录下，可留空或设为 ''
+    SERVER_IP: '', // 修改为您的服务器地址，例如: 'http://localhost:8081'
     
     // API 端点
     ENDPOINTS: {
@@ -36,14 +36,9 @@ window.CONFIG = {
 
 // 获取完整的 API URL
 window.getApiUrl = function(endpoint) {
-    // 如果 SERVER_IP 包含 'your-server-ip'，则自动使用当前页面的域名
-    const base = window.CONFIG.SERVER_IP.includes('your-server-ip') 
-        ? window.location.origin 
-        : window.CONFIG.SERVER_IP;
-    return base + endpoint;
+    // 直接使用配置的 SERVER_IP，避免开发环境下端口不一致导致请求失败
+    return window.CONFIG.SERVER_IP + endpoint;
 }
 
-// 修改 CONFIG.SERVER_IP 的默认逻辑，使其在 downloadResult 中也能正确工作
-window.BASE_URL = window.CONFIG.SERVER_IP.includes('your-server-ip') 
-    ? window.location.origin 
-    : window.CONFIG.SERVER_IP;
+// 设置全局 BASE_URL
+window.BASE_URL = window.CONFIG.SERVER_IP;

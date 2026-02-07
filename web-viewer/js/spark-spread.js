@@ -10,7 +10,7 @@ const defaultOptions = {
   opacityScale: 1.0,
   timeSource: 'auto',
   effectType: 'Spread', // 'Magic', 'Spread', 'Unroll', 'Twister', 'Rain'
-  maxRadius: 10.0,
+  maxRadius: 50.0,
   duration: 10.0
 };
 
@@ -41,10 +41,13 @@ function makeController(initial) {
   };
 }
 
-function createWavefrontModifier(opts, controller) {
+function createStyleModifier(opts, controller) {
   // Create Dyno values for time and effect type
   const animateT = dyno.dynoFloat(0);
-  const effectTypeVal = dyno.dynoInt(2);
+  const effectTypeVal =opts.effectType === "Magic" ? dyno.dynoInt(1) : 
+                          opts.effectType === "Spread" ? dyno.dynoInt(2) : 
+                          opts.effectType === "Unroll" ? dyno.dynoInt(3) : 
+                          opts.effectType === "Twister" ? dyno.dynoInt(4) : dyno.dynoInt(5);
 
   const maxRadius = (opts.maxRadius ?? defaultOptions.maxRadius).toFixed(1);
   const duration = (opts.duration ?? defaultOptions.duration).toFixed(1);
@@ -121,62 +124,61 @@ function createWavefrontModifier(opts, controller) {
           `)
         ],
         // Main effect shader logic
-        statements: ({ inputs, outputs }) => dyno.unindentLines(`
-          ${outputs.gsplat} = ${inputs.gsplat};
-          float t = ${inputs.t};
-          // Dynamic radius and duration from options
-          float s = smoothstep(0., ${duration}, t-1.0) * ${maxRadius};
-          vec3 scales = ${inputs.gsplat}.scales;
-          vec3 localPos = ${inputs.gsplat}.center;
-          float l = length(localPos.xz);
-          
-          if (${inputs.effectType} == 1) {
-            // Magic Effect: Complex twister with noise and radial reveal
-            float border = abs(s-l-.5);
-            localPos *= 1.-.2*exp(-20.*border);
-            vec3 finalScales = mix(scales,vec3(0.002),smoothstep(s-.5,s,l+.5));
-            ${outputs.gsplat}.center = localPos + .1*noise(localPos.xyz*2.+t*.5)*smoothstep(s-.5,s,l+.5);
-            ${outputs.gsplat}.scales = finalScales;
-            float at = atan(localPos.x,localPos.z)/3.1416;
-            ${outputs.gsplat}.rgba *= step(at,t-3.1416);
-            ${outputs.gsplat}.rgba += exp(-20.*border) + exp(-50.*abs(t-at-3.1416))*.5;
+statements: ({ inputs, outputs }) => dyno.unindentLines(`
+            ${outputs.gsplat} = ${inputs.gsplat};
+            float t = ${inputs.t};
+            float s = smoothstep(0.,10.,t-4.5)*${maxRadius};
+            vec3 scales = ${inputs.gsplat}.scales;
+            vec3 localPos = ${inputs.gsplat}.center;
+            float l = length(localPos.xz);
             
-          } else if (${inputs.effectType} == 2) {
-            // Spread Effect: Gentle radial emergence with scaling
-            float tt = t*t*.4+.5;
-            localPos.xz *= min(1.,.3+max(0.,tt*.05));
-            ${outputs.gsplat}.center = localPos;
-            ${outputs.gsplat}.scales = max(mix(vec3(0.0),scales,min(tt-7.-l*2.5,1.)),mix(vec3(0.0),scales*.2,min(tt-1.-l*2.,1.)));
-            ${outputs.gsplat}.rgba = mix(vec4(.3),${inputs.gsplat}.rgba,clamp(tt-l*2.5-3.,0.,1.));
-            
-          } else if (${inputs.effectType} == 3) {
-            // Unroll Effect: Rotating helix with vertical reveal
-            localPos.xz *= rot((localPos.y*50.-20.)*exp(-t));
-            ${outputs.gsplat}.center = localPos * (1.-exp(-t)*2.);
-            ${outputs.gsplat}.scales = mix(vec3(0.002),scales,smoothstep(.3,.7,t+localPos.y-2.));
-            ${outputs.gsplat}.rgba = ${inputs.gsplat}.rgba*step(0.,t*.5+localPos.y-.5);
-          } else if (${inputs.effectType} == 4) {
-            // Twister Effect: swirling weather reveal
-            vec4 effectResult = twister(localPos, scales, t);
-            ${outputs.gsplat}.center = effectResult.xyz;
-            ${outputs.gsplat}.scales = mix(vec3(.002), scales, pow(effectResult.w, 12.));
-            float s = effectResult.w;
-            // Also apply a spin (self-rotation) so each splat rotates about its own center.
-            float spin = -t * 0.3 * (1.0 - s);
-            vec4 spinQ = vec4(0.0, sin(spin*0.5), 0.0, cos(spin*0.5));
-            ${outputs.gsplat}.quaternion = quatQuat(spinQ, ${inputs.gsplat}.quaternion);
-          } else if (${inputs.effectType} == 5) {
-            // Rain Effect: falling streaks
-            vec4 effectResult = rain(localPos, scales, t);
-            ${outputs.gsplat}.center = effectResult.xyz;
-            ${outputs.gsplat}.scales = mix(vec3(.005), scales, pow(effectResult.w, 30.));
-            // Also apply a spin (self-rotation) so each splat rotates about its own center.
-            float spin = -t*.3;
-            vec4 spinQ = vec4(0.0, sin(spin*0.5), 0.0, cos(spin*0.5));
-            ${outputs.gsplat}.quaternion = quatQuat(spinQ, ${inputs.gsplat}.quaternion);
-          }
-        `),
-      });
+            if (${inputs.effectType} == 1) {
+              // Magic Effect: Complex twister with noise and radial reveal
+              float border = abs(s-l-.5);
+              localPos *= 1.-.2*exp(-20.*border);
+              vec3 finalScales = mix(scales,vec3(0.002),smoothstep(s-.5,s,l+.5));
+              ${outputs.gsplat}.center = localPos + .1*noise(localPos.xyz*2.+t*.5)*smoothstep(s-.5,s,l+.5);
+              ${outputs.gsplat}.scales = finalScales;
+              float at = atan(localPos.x,localPos.z)/3.1416;
+              ${outputs.gsplat}.rgba *= step(at,t-3.1416);
+              ${outputs.gsplat}.rgba += exp(-20.*border) + exp(-50.*abs(t-at-3.1416))*.5;
+              
+            } else if (${inputs.effectType} == 2) {
+              // Spread Effect: Gentle radial emergence with scaling
+              float tt = t*t*.4+.5;
+              localPos.xz *= min(1.,.3+max(0.,tt*.05));
+              ${outputs.gsplat}.center = localPos;
+              ${outputs.gsplat}.scales = max(mix(vec3(0.0),scales,min(tt-7.-l*2.5,1.)),mix(vec3(0.0),scales*.2,min(tt-1.-l*2.,1.)));
+              ${outputs.gsplat}.rgba = mix(vec4(.3),${inputs.gsplat}.rgba,clamp(tt-l*2.5-3.,0.,1.));
+              
+            } else if (${inputs.effectType} == 3) {
+              // Unroll Effect: Rotating helix with vertical reveal
+              localPos.xz *= rot((localPos.y*50.-20.)*exp(-t));
+              ${outputs.gsplat}.center = localPos * (1.-exp(-t)*2.);
+              ${outputs.gsplat}.scales = mix(vec3(0.002),scales,smoothstep(.3,.7,t+localPos.y-2.));
+              ${outputs.gsplat}.rgba = ${inputs.gsplat}.rgba*step(0.,t*.5+localPos.y-.5);
+            } else if (${inputs.effectType} == 4) {
+              // Twister Effect: swirling weather reveal
+              vec4 effectResult = twister(localPos, scales, t);
+              ${outputs.gsplat}.center = effectResult.xyz;
+              ${outputs.gsplat}.scales = mix(vec3(.002), scales, pow(effectResult.w, 12.));
+              float s = effectResult.w;
+              // Also apply a spin (self-rotation) so each splat rotates about its own center.
+              float spin = -t * 0.3 * (1.0 - s);
+              vec4 spinQ = vec4(0.0, sin(spin*0.5), 0.0, cos(spin*0.5));
+              ${outputs.gsplat}.quaternion = quatQuat(spinQ, ${inputs.gsplat}.quaternion);
+            } else if (${inputs.effectType} == 5) {
+              // Rain Effect: falling streaks
+              vec4 effectResult = rain(localPos, scales, t);
+              ${outputs.gsplat}.center = effectResult.xyz;
+              ${outputs.gsplat}.scales = mix(vec3(.005), scales, pow(effectResult.w, 30.));
+              // Also apply a spin (self-rotation) so each splat rotates about its own center.
+              float spin = -t*.3;
+              vec4 spinQ = vec4(0.0, sin(spin*0.5), 0.0, cos(spin*0.5));
+              ${outputs.gsplat}.quaternion = quatQuat(spinQ, ${inputs.gsplat}.quaternion);
+            }
+          `),
+        });
 
       return d.apply({ 
         gsplat,
@@ -229,7 +231,7 @@ export function attachSpreading(mesh, options = {}) {
 
   const controller = makeController(init);
   const modOpts = { ...options };
-  const worldModifier = createWavefrontModifier(modOpts, controller);
+  const worldModifier = createStyleModifier(modOpts, controller);
 
   mesh.worldModifier = worldModifier;
 
