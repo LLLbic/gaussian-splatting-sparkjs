@@ -9,9 +9,6 @@ Automated Video Processing Script for 3D Gaussian Splatting Training
 3. 可选：生成深度图 (Optional: Generate depth maps)
 4. 自动训练 3DGS 模型 (Automatically train 3DGS model)
 5. 可选：渲染结果 (Optional: Render results)
-
-作者: AI Assistant
-日期: 2026-02-06
 """
 
 import os

@@ -8,9 +8,6 @@ Access Code Manager - Query and manage 3DGS training results
 2. 通过访问码查询场景详情
 3. 生成前端查看器加载链接
 4. 删除指定访问码的数据
-
-作者: AI Assistant
-日期: 2026-02-06
 """
 
 import json

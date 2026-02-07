@@ -28,9 +28,6 @@ parser.add_argument("--use_expcomp", action="store_true")
 parser.add_argument("--fast", action="store_true")
 parser.add_argument("--aa", action="store_true")
 
-
-
-
 args, _ = parser.parse_known_args()
 
 all_scenes = []

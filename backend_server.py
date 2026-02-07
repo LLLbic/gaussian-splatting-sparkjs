@@ -8,12 +8,9 @@
 2. 处理视频并训练3DGS模型
 3. 实时推送处理进度
 4. 提供模型下载和查看器访问
-
-作者: AI Assistant
-日期: 2026-02-07
 """
 
-from flask import Flask, request, jsonify, send_file, Response
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import os
@@ -34,11 +31,28 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024 * 1024  # 10GB max file size
 CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=100 * 1024 * 1024)
 
+# 强制添加CORS头，解决某些情况下(如静态文件)CORS失效的问题
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+
+
 # 配置
-UPLOAD_FOLDER = Path('uploads')
-DATASETS_FOLDER = Path('datasets')
-UPLOAD_FOLDER.mkdir(exist_ok=True)
-DATASETS_FOLDER.mkdir(exist_ok=True)
+# 使用绝对路径，确保无论从哪里启动脚本都能正确访问
+BASE_DIR = Path.home() / 'drt' / 'gaussian-splatting'
+UPLOAD_FOLDER = BASE_DIR / 'uploads'
+DATASETS_FOLDER = BASE_DIR / 'datasets'
+
+# 确保目录存在
+print(f"Base Directory: {BASE_DIR}")
+print(f"Uploads: {UPLOAD_FOLDER}")
+print(f"Datasets: {DATASETS_FOLDER}")
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+DATASETS_FOLDER.mkdir(parents=True, exist_ok=True)
 
 # 全局任务状态
 tasks = {}
@@ -121,8 +135,12 @@ def init_upload():
     # 生成任务ID
     task_id = hashlib.md5(f"{scene_name}{video_filename}{time.time()}".encode()).hexdigest()[:16]
     
+    # 获取FPS参数
+    fps = data.get('fps', 30)
+
     # 创建任务
     task = TaskProgress(task_id, scene_name, video_filename)
+    task.fps = fps # 保存到任务对象
     
     with tasks_lock:
         tasks[task_id] = task
@@ -242,13 +260,18 @@ def process_video(task_id, video_path):
         return
     
     try:
+        # 获取任务配置的 FPS，默认为 30 (应用户要求提高性能)
+        # 注意: 如果前端没传，init_upload 默认是 10
+        fps = getattr(task, 'fps', 30)
+
         # 调用自动化脚本
         cmd = [
-            'python',
-            'auto_video_to_3dgs.py',
+            sys.executable, 
+            str(BASE_DIR / 'auto_video_to_3dgs.py'),
             '--video', str(video_path),
             '--scene', task.scene_name,
-            '--fps', '2',
+            '--fps', str(fps),
+            '--output-base', str(DATASETS_FOLDER),
             '--render'
         ]
         
@@ -276,28 +299,31 @@ def process_video(task_id, video_path):
                     access_code = parts[1].strip()
                     task.update(access_code=access_code)
             
-            # 解析进度（简单示例，可以根据实际输出调整）
-            if 'Training progress' in line or '训练进度' in line:
-                # 尝试提取进度百分比
-                try:
-                    # 这里需要根据实际输出格式调整
-                    progress = estimate_progress(line)
-                    task.update(
-                        status='training',
-                        progress=progress,
-                        message=f'训练中... {progress}%'
-                    )
-                except:
-                    pass
+            # 1. 优先匹配明确的阶段关键词
+            if '提取帧' in line or 'extract' in line.lower():
+                task.update(status='extracting', progress=10, message='提取视频帧中...')
             
             elif 'COLMAP' in line:
                 task.update(status='colmap', progress=20, message='COLMAP处理中...')
             
-            elif '提取帧' in line or 'extract' in line.lower():
-                task.update(status='extracting', progress=10, message='提取视频帧中...')
-            
             elif '渲染' in line or 'render' in line.lower():
-                task.update(status='rendering', progress=90, message='渲染结果中...')
+                # 渲染阶段设为 95%，确保比训练结束时高
+                task.update(status='rendering', progress=95, message='渲染结果中...')
+
+            else:
+                # 2. 尝试解析训练进度
+                # 将训练进度(0-100)映射到总进度(30-90)
+                prog = estimate_progress(line)
+                if prog is not None:
+                    # 映射公式: 30 + (prog * 0.6)
+                    real_prog = 30 + int(prog * 0.6)
+                    real_prog = min(94, real_prog) # 留一点空间给渲染
+                    
+                    task.update(
+                        status='training',
+                        progress=real_prog,
+                        message=f'训练中... {prog}%'
+                    )
         
         process.wait()
         
@@ -343,14 +369,42 @@ def process_video(task_id, video_path):
 
 
 def estimate_progress(line):
-    """估算训练进度（简化版）"""
-    # 这里可以根据实际输出格式解析进度
-    # 示例：从 "Training progress: 50%" 中提取50
+    """估算训练进度（增强版）"""
     import re
-    match = re.search(r'(\d+)%', line)
-    if match:
-        return int(match.group(1))
-    return 50  # 默认返回50%
+    
+    # 策略 1: 匹配精确的迭代次数 (例如: 700/30000)
+    # 这通常提供比百分比更"紧缺"（精确）的进度
+    iter_match = re.search(r'(\d+)\s*/\s*(\d+)', line)
+    if iter_match:
+        try:
+            current = int(iter_match.group(1))
+            total = int(iter_match.group(2))
+            # 简单的验证: total 应该比较大，且 current <= total
+            # 3DGS 训练通常至少几千次迭代
+            if total >= 100:
+                # 防止除零错误，尽管正则匹配保证了数字存在
+                return int((current / total) * 100)
+        except ValueError:
+            pass
+
+    # 策略 2: 匹配 tqdm 风格的百分比 (例如: 10%|...|)
+    percent_match = re.search(r'(\d+)%\|', line)
+    if percent_match:
+        try:
+            return int(percent_match.group(1))
+        except ValueError:
+            pass
+
+    # 策略 3: 匹配普通百分比文本 (例如: Progress: 50%)
+    # 但要小心不要误判，比如 "100% loss"
+    text_match = re.search(r'(?:progress|进度).*?(\d+)%', line, re.IGNORECASE)
+    if text_match:
+        try:
+            return int(text_match.group(1))
+        except ValueError:
+            pass
+            
+    return None
 
 
 @app.route('/api/task/<task_id>', methods=['GET'])
@@ -435,13 +489,51 @@ def download_model(access_code):
         if not model_path:
             return jsonify({'error': '模型尚未生成'}), 404
         
-        # 实际应用中，这里应该打包模型文件并返回
+        # 返回正确的文件下载URL (基于静态文件服务)
         return jsonify({
             'access_code': access_code,
             'model_path': model_path,
-            'download_url': f'/api/files/{model_path}'
+            'download_url': f'/datasets/{access_code}/{model_path}'
         })
     
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/datasets/<path:filename>')
+def serve_datasets(filename):
+    """Serve files from the datasets directory"""
+    return send_from_directory(DATASETS_FOLDER, filename)
+
+
+@app.route('/api/list-dirs', methods=['GET'])
+def list_dirs():
+    """List subdirectories in a given path (relative to DATASETS_FOLDER)"""
+    # Fix: Remove 'datasets/' prefix if present in the path argument
+    # because DATASETS_FOLDER is already the root
+    rel_path_arg = request.args.get('path', '')
+    
+    if rel_path_arg.startswith('datasets/'):
+        rel_path = rel_path_arg[9:] # Remove 'datasets/' prefix
+    else:
+        rel_path = rel_path_arg
+    
+    # Security check: prevent traversal
+    if '..' in rel_path or rel_path.startswith('/'):
+        return jsonify({'error': 'Invalid path'}), 400
+        
+    target_path = DATASETS_FOLDER / rel_path
+    
+    if not target_path.exists():
+        return jsonify({'error': 'Path not found'}), 404
+        
+    if not target_path.is_dir():
+        return jsonify({'error': 'Path is not a directory'}), 400
+        
+    try:
+        # List only directories
+        dirs = [d.name for d in target_path.iterdir() if d.is_dir()]
+        return jsonify({'directories': dirs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

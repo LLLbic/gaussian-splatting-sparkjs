@@ -32,56 +32,17 @@
       </button>
     </header>
 
-    <!-- 导航箭头 - 切换到查看器 -->
-    <button class="nav-arrow" id="navArrow" title="查看渲染结果" style="display: flex;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-        <polyline points="12 5 19 12 12 19"></polyline>
-      </svg>
-    </button>
-
-    <!-- 返回按钮 -->
-    <button class="back-button" id="backButton" title="返回首页" style="display: none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <line x1="19" y1="12" x2="5" y2="12"></line>
-        <polyline points="12 19 5 12 12 5"></polyline>
-      </svg>
-    </button>
 
 
+    <!-- 隐藏的配置输入，用于维持现有逻辑（可选，或直接在JS中写死） -->
+    <!-- 自动生成场景名，FPS设为30 -->
+    <input type="hidden" id="sceneNameInput" value="">
+    <input type="hidden" id="fpsSelect" value="30">
 
-    <!-- 服务器配置面板 -->
-    <section class="config-section" id="configSection">
-      <div class="card config-panel">
-        <h3 style="margin-bottom: var(--spacing-md); display: flex; align-items: center; gap: 10px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 24px; height: 24px;">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path
-              d="M12 1v6m0 6v6m8.66-15.66l-4.24 4.24m-4.24 4.24l-4.24 4.24m15.66-8.66l-4.24-4.24m-4.24-4.24l-4.24-4.24">
-            </path>
-          </svg>
-          Processing Configuration
-        </h3>
-        <div class="input-group">
-          <label for="sceneNameInput">Scene Name</label>
-          <input type="text" id="sceneNameInput" placeholder="例如: living_room" value="">
-        </div>
-        <div class="input-group">
-          <label for="fpsSelect">Frame Rate (FPS)</label>
-          <select id="fpsSelect">
-            <option value="1">1 FPS (Very Slow)</option>
-            <option value="2">2 FPS (Slow)</option>
-            <option value="5">5 FPS (Low)</option>
-            <option value="10" selected>10 FPS (Standard)</option>
-            <option value="15">15 FPS (Medium)</option>
-            <option value="24">24 FPS (Cinematic)</option>
-            <option value="30">30 FPS (High)</option>
-          </select>
-        </div>
-        <!-- 隐藏的服务器IP配置 -->
-        <input type="hidden" id="computeServerIp" value="100.73.115.55:5000">
-      </div>
-    </section>
+    <!-- 实时 FPS 显示 -->
+    <div id="fpsCounter"
+      style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.5); color: #00ff00; padding: 5px 10px; border-radius: 4px; font-family: monospace; font-weight: bold; z-index: 1000; display: none;">
+      FPS: 0</div>
 
     <!-- 上传区域 -->
     <section class="upload-section" id="uploadSection">

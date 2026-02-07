@@ -21,7 +21,7 @@ window.viewer = {
         down: false
     },
     moveSpeed: 0.05,
-    
+
     // 演示场景配置
     demoScenes: {
         bedroom: {
@@ -43,28 +43,28 @@ window.viewer = {
             lookAt: { x: 3, y: 1, z: -3 }
         }
     },
-    
+
     // 初始化查看器
     init() {
         this.initRenderer();
-        
+
         // 添加方向光
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(5, 5, 5);
         this.scene.add(directionalLight);
-        
+
         // 设置键盘控制
         this.setupKeyboardControls();
-        
+
         // 开始渲染循环
         this.animate();
-        
+
         // 显示场景选择器
         const sceneSelector = document.getElementById('sceneSelector');
         if (sceneSelector) {
             sceneSelector.style.display = 'block';
         }
-        
+
         console.log('Viewer initialized with Spark support');
     },
 
@@ -72,7 +72,7 @@ window.viewer = {
     initRenderer() {
         const container = document.getElementById('canvas-container');
         const canvas = document.getElementById('viewer-canvas');
-        
+
         // 针对 Splatting 优化的渲染器配置
         this.renderer = new THREE.WebGLRenderer({
             canvas: canvas,
@@ -85,28 +85,28 @@ window.viewer = {
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(container.clientWidth, container.clientHeight);
         this.renderer.setClearColor(new THREE.Color(0x505050), 1); // 改为中灰色，更容易分辨黑色模型和背景
-        
+
         // 启用 WebGL 2 特性支持 (虽然 Three.js 默认会自动处理)
         if (this.renderer.capabilities.isWebGL2) {
             console.log('WebGL 2 enabled');
         } else {
             console.warn('WebGL 2 not available - Splatting may not work correctly');
         }
-        
+
         // 场景与相机
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
         this.camera.position.set(0, 5, 10);
-        
+
         // 控制器
         this.controls = new window.OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
-        
+
         // 环境光
         const ambientLight = new THREE.AmbientLight(0xffffff, 1);
         this.scene.add(ambientLight);
-        
+
         // 处理窗口调整
         window.addEventListener('resize', () => {
             const width = container.clientWidth;
@@ -116,7 +116,7 @@ window.viewer = {
             this.renderer.setSize(width, height);
         });
     },
-    
+
     // 清理查看器
     clearViewer() {
         if (this.pointCloud) {
@@ -137,22 +137,22 @@ window.viewer = {
     async loadSceneUrl(url) {
         try {
 
-                        
+
             this.clearViewer();
-            
+
             console.log("Loading SplatMesh from URL (streaming):", url);
-            
+
             if (!window.SplatMesh) throw new Error("SplatMesh not loaded");
-            
+
             // 使用 Spark SplatMesh 加载 (启用流式传输)
-            const splatMesh = new window.SplatMesh({ 
+            const splatMesh = new window.SplatMesh({
                 url: url,
                 stream: true
             });
-            
+
             // 等待初始化完成 (只需读取头部信息)
             await splatMesh.initialized;
-            
+
             // 修正旋转：Gaussian Splatting 的 PLY 通常需要沿 X 轴旋转 180 度才能正确定向
             splatMesh.rotation.x = Math.PI;
 
@@ -170,14 +170,14 @@ window.viewer = {
                     window.showNotification(`渲染完成 (耗时: ${timeTaken.toFixed(2)}s)`, 'success');
                 }
             }).__spreadController;
-            
+
             // Reset time to start effect from 0
             controller.reset();
-            
+
             this.pointCloud = splatMesh;
             this.currentSplat = splatMesh;
             this.scene.add(splatMesh);
-            
+
             // 居中并缩放相机
             this.fitCameraToMesh();
             this.controls.update();
@@ -191,17 +191,17 @@ window.viewer = {
     // 调整相机以适应模型 (替代 centerAndScale，避免缩放导致 splat 消失)
     fitCameraToMesh() {
         if (!this.pointCloud) return;
-        
+
         // 计算包围盒
         let box = new THREE.Box3();
         if (this.pointCloud.getBoundingBox) {
-             // SplatMesh
+            // SplatMesh
             box = this.pointCloud.getBoundingBox();
         } else {
             // THREE.Points
             box.setFromObject(this.pointCloud);
         }
-        
+
         let center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
 
@@ -240,10 +240,10 @@ window.viewer = {
         }
 
         const maxDim = Math.max(size.x, size.y, size.z);
-        
+
         // 限制 maxDim 的范围，防止相机飞得太远
         const safeMaxDim = Math.min(Math.max(maxDim, 0.1), 1000);
-        
+
         // 1. 添加包围盒辅助线 (BoxHelper)
         if (this.boxHelper) this.scene.remove(this.boxHelper);
         this.boxHelper = new THREE.BoxHelper(this.pointCloud, 0xffff00); // 黄色辅助线
@@ -252,28 +252,28 @@ window.viewer = {
         // 不再缩放或移动模型，而是移动相机
         this.pointCloud.position.set(0, 0, 0);
         this.pointCloud.scale.set(1, 1, 1);
-        
+
         // 设置相机控制器的焦点为模型中心
         this.controls.target.copy(center);
-        
+
         // 计算合适的相机距离
         const fov = this.camera.fov * (Math.PI / 180);
         let cameraDistance = Math.abs(safeMaxDim / 2 / Math.tan(fov / 2));
-        
+
         // 稍微拉远一点，留出边距 (2.0倍)
         cameraDistance *= 2.0;
-        
+
         // 设置相机位置：在中心点后方/上方
         const direction = new THREE.Vector3(0, 0.5, 1).normalize();
-        this.camera.position.copy(center).add(direction.multiplyScalar(0.001*cameraDistance));
-        
+        this.camera.position.copy(center).add(direction.multiplyScalar(0.001 * cameraDistance));
+
         // 确保相机不被裁剪
         this.camera.near = 0.01;
         this.camera.far = Math.max(cameraDistance * 10, 2000);
         this.camera.updateProjectionMatrix();
 
         this.controls.update();
-        
+
         console.log("[Debug] 相机已适配。位置:", this.camera.position, "目标:", this.controls.target, "距离:", cameraDistance);
 
         // 强制设置材质不透明度，防止被效果误伤
@@ -282,12 +282,12 @@ window.viewer = {
             this.pointCloud.material.transparent = true;
         }
     },
-    
+
     // 设置键盘控制
     setupKeyboardControls() {
         // 键盘按下事件
         window.addEventListener('keydown', (e) => {
-            switch(e.key.toLowerCase()) {
+            switch (e.key.toLowerCase()) {
                 case 'w':
                     this.keyboardControls.forward = true;
                     break;
@@ -308,10 +308,10 @@ window.viewer = {
                     break;
             }
         });
-        
+
         // 键盘释放事件
         window.addEventListener('keyup', (e) => {
-            switch(e.key.toLowerCase()) {
+            switch (e.key.toLowerCase()) {
                 case 'w':
                     this.keyboardControls.forward = false;
                     break;
@@ -333,18 +333,18 @@ window.viewer = {
             }
         });
     },
-    
+
     // 更新相机位置（基于键盘输入）
     updateCameraPosition() {
         if (!this.camera || !this.controls) return;
-        
+
         const direction = new THREE.Vector3();
         const right = new THREE.Vector3();
-        
+
         // 获取相机的前方和右方向量
         this.camera.getWorldDirection(direction);
         right.crossVectors(this.camera.up, direction).normalize();
-        
+
         // W/S - 前后移动
         if (this.keyboardControls.forward) {
             this.camera.position.addScaledVector(direction, this.moveSpeed);
@@ -354,7 +354,7 @@ window.viewer = {
             this.camera.position.addScaledVector(direction, -this.moveSpeed);
             this.controls.target.addScaledVector(direction, -this.moveSpeed);
         }
-        
+
         // A/D - 左右移动
         if (this.keyboardControls.left) {
             this.camera.position.addScaledVector(right, this.moveSpeed);
@@ -364,7 +364,7 @@ window.viewer = {
             this.camera.position.addScaledVector(right, -this.moveSpeed);
             this.controls.target.addScaledVector(right, -this.moveSpeed);
         }
-        
+
         // Q/E 或 空格/Shift - 上下移动
         if (this.keyboardControls.up) {
             this.camera.position.y += this.moveSpeed;
@@ -375,18 +375,43 @@ window.viewer = {
             this.controls.target.y -= this.moveSpeed;
         }
     },
-    
+
     // 渲染循环
     animate() {
+        // FPS 计数器逻辑
+        if (!this.lastTime) {
+            this.lastTime = performance.now();
+            this.frames = 0;
+            this.fpsElement = document.getElementById('fpsCounter');
+        }
+
+        const time = performance.now();
+        this.frames++;
+
+        if (time >= this.lastTime + 1000) {
+            const fps = Math.round((this.frames * 1000) / (time - this.lastTime));
+            if (this.fpsElement) {
+                this.fpsElement.style.display = 'block';
+                this.fpsElement.textContent = `FPS: ${fps}`;
+
+                // 颜色编码
+                if (fps >= 50) this.fpsElement.style.color = '#00ff00';
+                else if (fps >= 30) this.fpsElement.style.color = '#ffff00';
+                else this.fpsElement.style.color = '#ff0000';
+            }
+            this.lastTime = time;
+            this.frames = 0;
+        }
+
         this.animationId = requestAnimationFrame(() => this.animate());
 
         // 更新键盘控制
         this.updateCameraPosition();
-        
+
         if (this.controls) {
             this.controls.update();
         }
-        
+
         // Update splat uniforms/effects
         if (this.currentSplat) {
             this.currentSplat.updateVersion();
@@ -397,18 +422,18 @@ window.viewer = {
             this.renderer.render(this.scene, this.camera);
         }
     },
-    
+
     // 窗口大小变化
     onWindowResize() {
         const container = document.getElementById('canvas-container');
         const width = container.clientWidth;
         const height = container.clientHeight;
-        
+
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
     },
-    
+
     // 重置相机
     resetCamera() {
         this.camera.position.set(
@@ -419,18 +444,18 @@ window.viewer = {
         this.controls.target.set(0, 0, 0);
         this.controls.update();
     },
-    
+
     // 全屏切换
     toggleFullscreen() {
         const container = document.getElementById('canvas-container');
-        
+
         if (!document.fullscreenElement) {
             container.requestFullscreen();
         } else {
             document.exitFullscreen();
         }
     },
-    
+
     // 截图
     takeScreenshot() {
         const dataURL = this.renderer.domElement.toDataURL('image/png');
@@ -440,27 +465,27 @@ window.viewer = {
         link.click();
         showNotification('Screenshot saved!', 'success');
     },
-    
+
     // 加载演示场景
     async loadDemoScene(sceneKey) {
         const sceneConfig = this.demoScenes[sceneKey];
         if (!sceneConfig) return;
-        
+
         console.log('Loading scene: ' + sceneConfig.name);
         window.showNotification('正在渲染...', 'info');
-        
+
         // 1. 清理
         this.clearViewer();
-        
+
         try {
             if (!window.SplatMesh) throw new Error('Spark SplatMesh engine not loaded');
 
             // 2. 创建 SplatMesh
-            const splat = new window.SplatMesh({ 
+            const splat = new window.SplatMesh({
                 url: sceneConfig.url,
-                stream: true 
+                stream: true
             });
-            
+
             // 3. 变换
             splat.rotation.x = Math.PI;
 
@@ -481,13 +506,13 @@ window.viewer = {
                     window.showNotification(`渲染完成 (耗时: ${timeTaken.toFixed(2)}s)`, 'success');
                 }
             }).__spreadController;
-            
+
             // Reset time to start effect from 0
             controller.reset();
 
             this.scene.add(splat);
             this.currentSplat = splat;
-            
+
             // 5. 相机设置
             if (sceneConfig.camera) {
                 const c = sceneConfig.camera;
@@ -502,7 +527,7 @@ window.viewer = {
             window.showNotification('Load failed: ' + err.message, 'error');
         }
     },
-    
+
     // 辅助方法：清理查看器
     clearViewer() {
         // 清除所有待处理的通知
@@ -517,7 +542,7 @@ window.viewer = {
             if (this.pointCloud.material) this.pointCloud.material.dispose();
             this.pointCloud = null;
         }
-        
+
         if (this.currentSplat) {
             this.scene.remove(this.currentSplat);
             if (typeof this.currentSplat.dispose === 'function') {
@@ -526,19 +551,19 @@ window.viewer = {
             this.currentSplat = null;
         }
     },
-    
+
     // 清理资源
     dispose() {
         if (this.animationId) {
             cancelAnimationFrame(this.animationId);
         }
-        
+
         if (this.pointCloud) {
             this.scene.remove(this.pointCloud);
             this.pointCloud.geometry.dispose();
             this.pointCloud.material.dispose();
         }
-        
+
         if (this.renderer) {
             this.renderer.dispose();
         }
