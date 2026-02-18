@@ -464,6 +464,10 @@ body::after {
   background: var(--success);
 }
 
+.status-badge.warning {
+  background: var(--warning);
+}
+
 .status-badge.error {
   background: var(--error);
 }
@@ -1256,6 +1260,44 @@ body::after {
   transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ========================================
+   Access Code 成功提示
+   ======================================== */
+.success-card {
+  text-align: center;
+  border: 1px solid var(--success) !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+  backdrop-filter: blur(20px);
+}
+
+.title-success {
+  color: var(--success);
+  margin-bottom: var(--spacing-sm);
+  font-size: 1.8rem;
+  text-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.code-display {
+  font-size: 3rem;
+  color: var(--warning);
+  font-weight: 700;
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-md);
+  letter-spacing: 4px;
+  user-select: all;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  text-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  font-family: 'Courier New', monospace;
+}
+
+.text-hint {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 
 .upload-section.hiding,

@@ -31,32 +31,36 @@ window.app = {
         const fileInput = document.getElementById('fileInput');
 
         // 点击上传区域
-        uploadArea.addEventListener('click', () => {
-            fileInput.click();
-        });
+        if (uploadArea) {
+            uploadArea.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            // 拖放
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('drag-over');
+            });
+
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('drag-over');
+            });
+
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('drag-over');
+
+                const file = e.dataTransfer.files[0];
+                this.handleFileSelect(file);
+            });
+        }
 
         // 文件选择
-        fileInput.addEventListener('change', (e) => {
-            this.handleFileSelect(e.target.files[0]);
-        });
-
-        // 拖放
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('drag-over');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('drag-over');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('drag-over');
-
-            const file = e.dataTransfer.files[0];
-            this.handleFileSelect(file);
-        });
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                this.handleFileSelect(e.target.files[0]);
+            });
+        }
     },
 
     // 设置背景音乐
@@ -113,7 +117,8 @@ window.app = {
         document.addEventListener('touchstart', startOnInteraction, { once: true });
 
         // 点击切换播放/暂停
-        musicToggle.addEventListener('click', () => {
+        musicToggle.addEventListener('click', (e) => {
+            e.stopPropagation(); // 防止触发 startOnInteraction
             if (isPlaying) {
                 bgMusic.pause();
                 musicToggle.classList.remove('playing');
@@ -149,14 +154,6 @@ window.app = {
 
         this.currentFile = file;
 
-        // 自动填写场景名 (去除扩展名，替换非字母数字字符为下划线)
-        const sceneNameInput = document.getElementById('sceneNameInput');
-        if (sceneNameInput) {
-            let name = file.name.replace(/\.[^/.]+$/, "");
-            name = name.replace(/[^a-zA-Z0-9_-]/g, '_');
-            sceneNameInput.value = name;
-        }
-
         this.showFilePreview(file);
     },
 
@@ -165,11 +162,14 @@ window.app = {
         document.getElementById('uploadArea').style.display = 'none';
         document.getElementById('filePreview').style.display = 'block';
 
-        document.getElementById('fileName').textContent = file.name;
-        document.getElementById('fileSize').textContent = this.formatFileSize(file.size);
+        const nameEl = document.getElementById('fileName');
+        const sizeEl = document.getElementById('fileSize');
+        if (nameEl) nameEl.textContent = file.name;
+        if (sizeEl) sizeEl.textContent = this.formatFileSize(file.size);
 
         // 显示"添加更多视频"按钮
-        document.getElementById('addMoreBtn').style.display = 'inline-flex';
+        const addBtn = document.getElementById('addMoreBtn');
+        if (addBtn) addBtn.style.display = 'inline-flex';
     },
 
     // 清除文件
@@ -178,65 +178,133 @@ window.app = {
         document.getElementById('uploadArea').style.display = 'block';
         document.getElementById('filePreview').style.display = 'none';
         document.getElementById('fileInput').value = '';
+        const nameInput = document.getElementById('projectNameInput');
+        if (nameInput) nameInput.value = '';
     },
 
     // 上传文件
     async uploadFile() {
         if (!this.currentFile) return;
 
-        try {
-            // 显示进度区域
-            this.showSection('progressSection');
-            this.hideSection('uploadSection');
+        // 获取用户输入的项目名称
+        const projectNameInput = document.getElementById('projectNameInput');
+        const projectName = projectNameInput ? projectNameInput.value.trim() : '';
 
-            // 更新状态
-            this.updateStatus('Processing', 'Uploading video...', 0);
+        if (!projectName) {
+            showNotification('Please enter a Project Name', 'error');
+            // 高亮输入框
+            if (projectNameInput) projectNameInput.focus();
+            return;
+        }
 
-            // 上传文件
-            const response = await api.uploadVideo(this.currentFile, (percent) => {
-                this.updateProgress(percent);
-            });
+        // 简单的前端验证 (只允许英文、数字、下划线)
+        if (!/^[a-zA-Z0-9_]+$/.test(projectName)) {
+            showNotification('Project Name must contain only English letters, numbers, and underscores.', 'error');
+            return;
+        }
 
-            // 保存 job ID
-            this.currentJobId = response.job_id || response.jobId || response.id;
-            document.getElementById('jobId').textContent = this.currentJobId;
-
-            showNotification('Upload successful! Processing started...', 'success');
-
-            // 开始轮询状态
-            this.startPolling();
-
-        } catch (error) {
-            console.error('Upload error:', error);
-            showNotification('Upload failed: ' + error.message, 'error');
-            this.updateStatus('Error', error.message, 0, 'error');
+        if (window.distributedUpload) {
+            // 使用 DistributedUploadManager
+            window.distributedUpload.uploadVideo(this.currentFile, projectName)
+                .then(() => {
+                    // 成功开始上传后，开始轮询状态以防 Socket 断开
+                    this.startPolling(projectName);
+                })
+                .catch(err => {
+                    console.error("Distributed upload failed", err);
+                    // 错误提示由 distributed-upload 处理，但也可能需要在这里额外处理
+                    // 错误提示由 distributed-upload 处理，但也可能需要在这里额外处理
+                    if (err.message && (err.message.includes('exist') || err.message.includes('存在') || err.message.includes('duplicate'))) {
+                        alert(err.message); // 弹窗提示重名
+                    }
+                });
+        } else {
+            showNotification('Upload manager not loaded', 'error');
         }
     },
 
-    // 开始轮询状态
-    async startPolling() {
-        try {
-            this.updateStatus('Processing', 'Processing video on server...', 10);
-
-            await api.pollStatus(this.currentJobId, (status) => {
-                // 更新进度
-                const progress = status.progress || 0;
-                const stage = status.stage || 'Processing';
-
-                this.updateStatus('Processing', stage, progress);
-            });
-
-            // 处理完成
-            this.updateStatus('Completed', 'Processing complete! Downloading result...', 100, 'success');
-
-            // 下载结果
-            await this.downloadAndDisplay();
-
-        } catch (error) {
-            console.error('Processing error:', error);
-            showNotification('Processing failed: ' + error.message, 'error');
-            this.updateStatus('Failed', error.message, 0, 'error');
+    // 检查状态并加载 (Check Status / View Result)
+    async checkStatusAndLoad(projectName) {
+        if (!projectName) {
+            showNotification('Please enter a Project Name', 'error');
+            return;
         }
+
+        try {
+            showNotification('Checking status...', 'info');
+            const res = await fetch(`/api/task/${projectName}`);
+
+            if (res.status === 404) {
+                showNotification(`Project "${projectName}" not found.`, 'error');
+                return;
+            }
+
+            const task = await res.json();
+
+            // 更新当前可能有用的上下文
+            this.currentJobId = projectName;
+
+            if (task.status === 'completed') {
+                showNotification('Training completed! Loading scene...', 'success');
+                this.downloadAndDisplay(projectName);
+            } else if (task.status === 'failed') {
+                alert(`Project "${projectName}" Failed.\nReason: ${task.error || 'Unknown error'}`);
+
+                // 将界面重置回上传页以便重试
+                this.startNew();
+            } else {
+                // 正在处理中 (queued, processing, uploading)
+                // 切换到进度界面
+                this.showSection('progressSection');
+                this.hideSection('uploadSection');
+                this.hideSection('viewerSection');
+
+                const jobIdEl = document.getElementById('jobId');
+                if (jobIdEl) jobIdEl.innerText = projectName;
+                this.updateStatus(task.status, task.message, task.progress);
+
+                // 开始轮询更新
+                this.startPolling(projectName);
+
+                if (task.status === 'queued' && task.queue_position > 0) {
+                    showNotification(`In Queue: Position ${task.queue_position}`, 'info');
+                }
+            }
+
+        } catch (e) {
+            console.error(e);
+            showNotification('Error checking status: ' + e.message, 'error');
+        }
+    },
+
+    // 轮询状态
+    startPolling(taskId) {
+        if (this.pollingInterval) clearInterval(this.pollingInterval);
+        console.log(`Starting polling for task: ${taskId}`);
+
+        this.pollingInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/task/${taskId}`);
+                if (res.ok) {
+                    const task = await res.json();
+                    this.updateStatus(task.status, task.message, task.progress);
+
+                    if (task.status === 'completed') {
+                        clearInterval(this.pollingInterval);
+                        showNotification('Training Completed!', 'success');
+                        // 可以在这里自动跳转，或者显示"查看结果"按钮
+                        // 这里选择直接加载
+                        this.downloadAndDisplay(taskId);
+                    } else if (task.status === 'failed') {
+                        clearInterval(this.pollingInterval);
+                        alert(`Task Failed: ${task.error}`);
+                        this.updateStatus('Failed', task.error, 0, 'error');
+                    }
+                }
+            } catch (err) {
+                console.warn("Polling error:", err);
+            }
+        }, 3000); // 每3秒轮询一次
     },
 
     // 下载并显示结果
@@ -246,8 +314,11 @@ window.app = {
             const targetScene = moduleID || this.currentJobId;
 
             if (!targetScene) {
-                throw new Error("未指定场景 ID (moduleID) 或 Job ID");
+                throw new Error("未指定场景 ID (Project Name) 或 Job ID");
             }
+
+            // 停止轮询（如果正在轮询）
+            if (this.pollingInterval) clearInterval(this.pollingInterval);
 
             // 0. 检查是否为预设演示场景
             if (window.viewer && window.viewer.demoScenes && window.viewer.demoScenes[targetScene]) {
@@ -309,11 +380,13 @@ window.app = {
         const progressFill = document.getElementById('progressFill');
         const progressPercent = document.getElementById('progressPercent');
 
-        statusBadge.textContent = badge;
-        statusBadge.className = 'status-badge ' + type;
-        statusText.textContent = text;
-        progressFill.style.width = progress + '%';
-        progressPercent.textContent = Math.round(progress) + '%';
+        if (statusBadge) {
+            statusBadge.textContent = badge;
+            statusBadge.className = 'status-badge ' + type;
+        }
+        if (statusText) statusText.textContent = text;
+        if (progressFill) progressFill.style.width = progress + '%';
+        if (progressPercent) progressPercent.textContent = Math.round(progress) + '%';
     },
 
     // 更新上传进度
@@ -321,8 +394,8 @@ window.app = {
         const progressFill = document.getElementById('progressFill');
         const progressPercent = document.getElementById('progressPercent');
 
-        progressFill.style.width = percent + '%';
-        progressPercent.textContent = Math.round(percent) + '%';
+        if (progressFill) progressFill.style.width = percent + '%';
+        if (progressPercent) progressPercent.textContent = Math.round(percent) + '%';
     },
 
     // 显示区域（带动画）
@@ -370,7 +443,7 @@ window.app = {
 
         this.clearFile();
 
-        if (viewer.scene && typeof viewer.clearViewer === 'function') {
+        if (window.viewer && viewer.scene && typeof viewer.clearViewer === 'function') {
             viewer.clearViewer();
         }
     },
@@ -388,7 +461,8 @@ window.app = {
         document.getElementById('uploadArea').style.display = 'block';
         document.getElementById('filePreview').style.display = 'none';
         document.getElementById('fileInput').value = '';
-        document.getElementById('addMoreBtn').style.display = 'none';
+        const addBtn = document.getElementById('addMoreBtn');
+        if (addBtn) addBtn.style.display = 'none';
     },
 
     // 更新已上传视频列表
@@ -398,25 +472,27 @@ window.app = {
         const videoCount = document.getElementById('videoCount');
 
         if (this.uploadedVideos.length === 0) {
-            videosList.style.display = 'none';
+            if (videosList) videosList.style.display = 'none';
             return;
         }
 
-        videosList.style.display = 'block';
-        videoCount.textContent = this.uploadedVideos.length;
+        if (videosList) videosList.style.display = 'block';
+        if (videoCount) videoCount.textContent = this.uploadedVideos.length;
 
-        videoItems.innerHTML = this.uploadedVideos.map((video, index) => `
-            <div class="video-item">
-                <div class="video-item-info">
-                    <div class="video-item-icon">🎬</div>
-                    <div class="video-item-details">
-                        <div class="video-item-name">${video.name}</div>
-                        <div class="video-item-size">${this.formatFileSize(video.size)}</div>
+        if (videoItems) {
+            videoItems.innerHTML = this.uploadedVideos.map((video, index) => `
+                <div class="video-item">
+                    <div class="video-item-info">
+                        <div class="video-item-icon">🎬</div>
+                        <div class="video-item-details">
+                            <div class="video-item-name">${video.name}</div>
+                            <div class="video-item-size">${this.formatFileSize(video.size)}</div>
+                        </div>
                     </div>
+                    <button class="video-item-remove" onclick="app.removeVideo(${index})">移除</button>
                 </div>
-                <button class="video-item-remove" onclick="app.removeVideo(${index})">移除</button>
-            </div>
-        `).join('');
+            `).join('');
+        }
     },
 
     // 移除视频
@@ -441,6 +517,7 @@ let notificationTimeout;
 // 显示通知
 function showNotification(message, type = 'info') {
     const notification = document.getElementById('notification');
+    if (!notification) return;
 
     // 清除之前的定时器
     if (notificationTimeout) {

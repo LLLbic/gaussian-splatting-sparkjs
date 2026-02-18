@@ -1,20 +1,22 @@
 window.CONFIG = {
-    SERVER_IP: 'http://100.73.115.55:5000',
+    // 后端服务器地址 (Tailscale 内网 IP)
+    SERVER_IP: '',
+
     // API 端点
     ENDPOINTS: {
-        UPLOAD: '/api/upload',
-        STATUS: '/api/status',
-        DOWNLOAD: '/api/download'
+        // UPLOAD 端点在 distributed-upload.js 中处理 (init/chunk/complete)
+        STATUS: '/api/task',
+        DOWNLOAD: '/api/download/model'
     },
 
     // 上传配置
     UPLOAD: {
-        MAX_FILE_SIZE: 2 * 1024 * 1024 * 1024, // 2GB
+        MAX_FILE_SIZE: 10 * 1024 * 1024 * 1024, // 10GB
         ALLOWED_FORMATS: ['video/mp4', 'video/quicktime', 'video/x-msvideo'],
         CHUNK_SIZE: 5 * 1024 * 1024 // 5MB chunks
     },
 
-    // 轮询配置
+    // 轮询配置 (作为 WebSocket 的备选)
     POLLING: {
         INTERVAL: 2000, // 2秒
         MAX_RETRIES: 3
@@ -32,7 +34,7 @@ window.CONFIG = {
 
 // 获取完整的 API URL
 window.getApiUrl = function (endpoint) {
-    // 直接使用配置的 SERVER_IP，避免开发环境下端口不一致导致请求失败
+    if (endpoint.startsWith('http')) return endpoint;
     return window.CONFIG.SERVER_IP + endpoint;
 }
 

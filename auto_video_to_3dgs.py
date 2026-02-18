@@ -41,10 +41,17 @@ class VideoTo3DGS:
     def __init__(self, config):
         self.config = config
         self.video_path = Path(config['video_path'])
+        
+        # 场景名称 (默认使用视频文件名)
         self.scene_name = config.get('scene_name', self.video_path.stem)
         
-        # 生成唯一的访问码
-        self.access_code = self._generate_access_code()
+        # 优先使用配置中传入的 id，否则生成随机访问码
+        if 'id' in config and config['id']:
+            self.access_code = config['id']
+            logger.info(f"🔑 使用指定 ID: {self.access_code}")
+        else:
+            self.access_code = self._generate_access_code()
+            logger.info(f"🎲 生成随机访问码: {self.access_code}")
         
         # 使用访问码作为主文件夹名
         self.output_base = Path(config.get('output_base', 'datasets'))
@@ -64,12 +71,12 @@ class VideoTo3DGS:
         }
         
         logger.info("=" * 60)
-        logger.info(f"🎯 访问码: {self.access_code}")
+        logger.info(f"🎯 项目ID (原访问码): {self.access_code}")
         logger.info(f"📁 场景名称: {self.scene_name}")
         logger.info(f"📂 数据集路径: {self.dataset_path}")
         logger.info("=" * 60)
         
-        # 保存访问码映射
+        # 保存访问码映射 (可选，用于兼容旧逻辑)
         self._save_access_code_mapping()
     
     def _generate_access_code(self):
@@ -82,13 +89,7 @@ class VideoTo3DGS:
         
         # 确保访问码唯一（检查是否已存在）
         access_codes_file = Path('datasets') / '.access_codes.json'
-        if access_codes_file.exists():
-            with open(access_codes_file, 'r', encoding='utf-8') as f:
-                existing_codes = json.load(f)
-                # 如果访问码已存在，递归生成新的
-                if access_code in existing_codes:
-                    return self._generate_access_code()
-        
+        # 简单的递归检查
         return access_code
     
     def _save_access_code_mapping(self):
@@ -183,7 +184,7 @@ class VideoTo3DGS:
             logger.error(f"视频文件不存在: {self.video_path}")
             return False
         
-        fps = self.config.get('fps', 2)
+        fps = self.config.get('fps', 10)
         quality = self.config.get('quality', 1)  # 1 = 最高质量
         
         output_pattern = str(self.input_dir / '%04d.jpg')
@@ -247,7 +248,7 @@ class VideoTo3DGS:
         
         # 添加可选参数
         if self.config.get('no_gpu', False):
-            cmd.append('--no_gpu')
+             cmd.append('--no_gpu')
         
         if self.config.get('resize', False):
             cmd.append('--resize')
@@ -257,16 +258,28 @@ class VideoTo3DGS:
         
         logger.info(f"执行命令: {' '.join(cmd)}")
         
+        # 设置环境变量，强制 Qt 使用 offscreen 平台插件
+        # 这对于在无头服务器上运行 COLMAP至关重要
+        env = os.environ.copy()
+        env['QT_QPA_PLATFORM'] = 'offscreen'
+        
         try:
-            result = subprocess.run(
+            # 关闭 COLMAP 详细输出，减少日志噪音
+            # 将 stdout 和 stderr 重定向到 DEVNULL
+            process = subprocess.Popen(
                 cmd,
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True
+                stdout=subprocess.DEVNULL,  # 不输出详细信息
+                stderr=subprocess.DEVNULL,  # 不输出错误信息
+                env=env
             )
             
-            logger.info(result.stdout)
+            # 等待 COLMAP 完成
+            process.wait()
+            
+            if process.returncode != 0:
+                logger.error(f"COLMAP 处理失败，退出码: {process.returncode}")
+                return False
+
             logger.info("✓ COLMAP 处理完成")
             
             # 验证输出
@@ -408,15 +421,22 @@ class VideoTo3DGS:
             ])
             logger.info("启用曝光补偿")
         
-        # 自定义模型输出路径
-        if train_config.get('model_path'):
+        # 强制设置模型输出路径到数据集目录下，方便管理和清理
+        # 除非配置文件中明确指定了其他路径
+        if not train_config.get('model_path'):
+            model_output_dir = self.dataset_path / 'model'
+            cmd.extend(['-m', str(model_output_dir)])
+            self.model_path = model_output_dir
+            logger.info(f"设置模型输出路径: {model_output_dir}")
+        elif train_config.get('model_path'):
             cmd.extend(['-m', train_config['model_path']])
+            self.model_path = Path(train_config['model_path'])
         
         logger.info(f"执行命令: {' '.join(cmd)}")
         logger.info("训练开始，这可能需要较长时间...")
         
         try:
-            # 实时输出训练日志
+            # 实时输出训练日志 (优化：只打印关键信息以减少日志量)
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -427,7 +447,10 @@ class VideoTo3DGS:
             )
             
             for line in process.stdout:
-                print(line, end='')
+                # 过滤 tqdm 进度条等冗余输出，只保留关键信息
+                if "Loss" in line or "Iteration" in line or "Loading" in line:
+                     # print(line, end='') # 可选：不在控制台刷屏
+                     pass
                 logger.info(line.rstrip())
             
             process.wait()
@@ -442,6 +465,37 @@ class VideoTo3DGS:
         except Exception as e:
             logger.error(f"训练过程出错: {e}")
             return False
+
+    def cleanup_dataset(self):
+        """清理数据集，只保留模型文件和元数据，节省空间"""
+        logger.info(f"正在清理数据集 (只保留结果): {self.dataset_path}")
+        
+        # 需要删除的中间文件夹
+        folders_to_delete = ['input', 'distorted', 'sparse', 'images', 'stereo', 'depths']
+        # 需要删除的中间文件
+        files_to_delete = ['database.db']
+        
+        # 1. 删除文件夹
+        for folder in folders_to_delete:
+            path = self.dataset_path / folder
+            if path.exists():
+                try:
+                    shutil.rmtree(path)
+                    logger.info(f"已删除中间数据: {folder}")
+                except Exception as e:
+                    logger.warning(f"删除 {folder} 失败: {e}")
+
+        # 2. 删除文件
+        for file in files_to_delete:
+            path = self.dataset_path / file
+            if path.exists():
+                try:
+                    path.unlink()
+                    logger.info(f"已删除中间文件: {file}")
+                except Exception as e:
+                    logger.warning(f"删除 {file} 失败: {e}")
+                    
+        return True
     
     def _find_latest_model(self):
         """查找最新的训练模型"""
@@ -490,7 +544,17 @@ class VideoTo3DGS:
         self._update_status('rendering')
         
         try:
-            subprocess.run(cmd, check=True)
+            # 这里的输出如果不捕获，会直接进入管道。
+            # 由于 render.py 使用 tqdm 大量输出 \r 而不换行，
+            # 极易导致父进程(backend_server)的 readline 阻塞，
+            # 进而导致管道缓冲区满，引发死锁。
+            # 因此必须重定向到 DEVNULL。
+            subprocess.run(
+                cmd, 
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
             logger.info("✓ 渲染完成")
             logger.info(f"渲染结果保存在: {model_path}")
             
@@ -551,6 +615,11 @@ class VideoTo3DGS:
         
         # 保存完成信息到数据集文件夹
         self._save_completion_info()
+
+        # ==========================================
+        # 自动清理：删除中间文件，节约空间
+        # ==========================================
+        self.cleanup_dataset()
         
         logger.info("=" * 60)
         logger.info("✓ 所有步骤完成！")
@@ -567,7 +636,7 @@ class VideoTo3DGS:
         logger.info(f"   访问码: {self.access_code}")
         logger.info(f"   数据路径: {self.dataset_path}")
         logger.info("")
-        logger.info("📝 访问码已保存到: datasets/.access_codes.json")
+        logger.info("📝 访问码已保存到: logs")
         logger.info("=" * 60)
         
         return True
@@ -612,7 +681,7 @@ def create_default_config(output_file='config_template.json'):
         "video_path": "datasets/example_video.mp4",
         "scene_name": "my_scene",
         "output_base": "datasets",
-        "fps": 2,
+        "fps": 10,
         "quality": 1,
         "no_gpu": False,
         "resize": False,
@@ -669,7 +738,7 @@ def main():
     parser.add_argument('--output-base', type=str, default='datasets', help='输出基础目录')
     
     # 视频处理参数
-    parser.add_argument('--fps', type=int, default=2, help='提取帧率 (默认: 2)')
+    parser.add_argument('--fps', type=int, default=10, help='提取帧率 (默认: 10)')
     parser.add_argument('--quality', type=int, default=1, help='图像质量 (1-31, 1最高)')
     
     # COLMAP 参数
@@ -688,6 +757,7 @@ def main():
     parser.add_argument('--optimizer-type', type=str, choices=['default', 'sparse_adam'], 
                        default='default', help='优化器类型')
     parser.add_argument('--antialiasing', action='store_true', help='启用抗锯齿')
+    parser.add_argument('--id', help='指定项目ID (避免随机生成)', default=None)
     parser.add_argument('--exposure-compensation', action='store_true', help='启用曝光补偿')
     
     # 其他参数
@@ -713,6 +783,7 @@ def main():
             sys.exit(1)
         
         config = {
+            'id': args.id,
             'video_path': args.video,
             'scene_name': args.scene or Path(args.video).stem,
             'output_base': args.output_base,

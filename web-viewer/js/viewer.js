@@ -86,6 +86,14 @@ window.viewer = {
         this.renderer.setSize(container.clientWidth, container.clientHeight);
         this.renderer.setClearColor(new THREE.Color(0x505050), 1); // 改为中灰色，更容易分辨黑色模型和背景
 
+        // 移动设备优化：降低像素比率以提升性能
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+            const optimizedPixelRatio = Math.min(window.devicePixelRatio, 1.5);
+            this.renderer.setPixelRatio(optimizedPixelRatio);
+            console.log(`Mobile device detected, using optimized pixel ratio: ${optimizedPixelRatio}`);
+        }
+
         // 启用 WebGL 2 特性支持 (虽然 Three.js 默认会自动处理)
         if (this.renderer.capabilities.isWebGL2) {
             console.log('WebGL 2 enabled');
@@ -373,6 +381,64 @@ window.viewer = {
         if (this.keyboardControls.down) {
             this.camera.position.y -= this.moveSpeed;
             this.controls.target.y -= this.moveSpeed;
+        }
+    },
+
+    // LOD (Level of Detail) 优化
+    updateLOD() {
+        if (!this.currentSplat || !this.camera || !this.controls) return;
+
+        // 计算相机到模型中心的距离
+        const distance = this.camera.position.distanceTo(this.controls.target);
+
+        // 检测是否为移动设备
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+        // 根据设备类型和距离调整渲染质量
+        let qualityScale = 1.0;
+
+        if (isMobile) {
+            // 移动设备：更激进的 LOD
+            if (distance > 15) {
+                qualityScale = 2.5;  // 远距离：大幅降低质量
+            } else if (distance > 8) {
+                qualityScale = 1.8;  // 中距离：适度降低
+            } else if (distance > 4) {
+                qualityScale = 1.3;  // 近距离：轻微降低
+            } else {
+                qualityScale = 1.0;  // 很近：正常质量
+            }
+        } else {
+            // 桌面设备：温和的 LOD
+            if (distance > 20) {
+                qualityScale = 1.5;  // 远距离：轻微降低
+            } else if (distance > 10) {
+                qualityScale = 1.2;  // 中距离：几乎不变
+            } else {
+                qualityScale = 1.0;  // 近距离：正常质量
+            }
+        }
+
+        // 应用质量缩放（如果 SplatMesh 支持）
+        if (this.currentSplat.material && this.currentSplat.material.splatScale !== undefined) {
+            this.currentSplat.material.splatScale = qualityScale;
+        }
+
+        // 自适应帧率优化：如果帧率太低，自动降低质量
+        if (this.lastFPS !== undefined && this.lastFPS < 25 && isMobile) {
+            // 帧率低于 25 FPS，进一步降低质量
+            if (this.currentSplat.material && this.currentSplat.material.splatScale !== undefined) {
+                this.currentSplat.material.splatScale = Math.max(qualityScale * 1.5, 2.0);
+            }
+        }
+
+        // 记录当前帧率供下次使用
+        if (this.fpsElement) {
+            const fpsText = this.fpsElement.textContent;
+            const match = fpsText.match(/FPS: (\d+)/);
+            if (match) {
+                this.lastFPS = parseInt(match[1]);
+            }
         }
     },
 

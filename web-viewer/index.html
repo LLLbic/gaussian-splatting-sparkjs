@@ -33,13 +33,7 @@
     </header>
 
 
-
-    <!-- 隐藏的配置输入，用于维持现有逻辑（可选，或直接在JS中写死） -->
-    <!-- 自动生成场景名，FPS设为30 -->
-    <input type="hidden" id="sceneNameInput" value="">
-    <input type="hidden" id="fpsSelect" value="30">
-
-    <!-- 实时 FPS 显示 -->
+    <input type="hidden" id="fpsSelect" value="3">
     <div id="fpsCounter"
       style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.5); color: #00ff00; padding: 5px 10px; border-radius: 4px; font-family: monospace; font-weight: bold; z-index: 1000; display: none;">
       FPS: 0</div>
@@ -59,33 +53,30 @@
           <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-msvideo" hidden />
         </div>
 
-        <!-- 文件预览 -->
+        <!-- 文件预览与项目名称输入 -->
         <div class="file-preview" id="filePreview" style="display: none">
           <div class="preview-info">
             <svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
             </svg>
-            <div>
+            <div style="flex: 1;">
               <p class="file-name" id="fileName"></p>
               <p class="file-size" id="fileSize"></p>
             </div>
           </div>
+          
+          <!-- 项目名称输入 -->
+          <div class="project-name-input" style="margin: 15px 0;">
+            <label for="projectNameInput" style="display: block; margin-bottom: 5px; color: var(--text-secondary);">Project Name (Unique ID):</label>
+            <input type="text" id="projectNameInput" placeholder="Enter a unique project name (English/Numbers)" 
+              style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white;">
+            <p style="font-size: 0.8rem; color: rgba(255,255,255,0.5); margin-top: 5px;">This name will be used to retrieve your results later.</p>
+          </div>
+
           <div class="upload-buttons">
-            <button class="btn btn-primary" onclick="app.uploadFile()">
-              Upload & Process
-            </button>
-            <button class="btn btn-secondary" onclick="app.addMoreVideos()" id="addMoreBtn" style="display: none;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                style="width: 16px; height: 16px; margin-right: 4px; vertical-align: middle;">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              添加更多视频
-            </button>
-            <button class="btn btn-secondary" onclick="app.clearFile()">
-              Cancel
-            </button>
+            <button class="btn btn-primary" onclick="app.uploadFile()">Upload & Process</button>
+            <button class="btn btn-secondary" onclick="app.clearFile()">Cancel</button>
           </div>
         </div>
 
@@ -95,16 +86,16 @@
           <div class="video-items" id="videoItems"></div>
         </div>
 
-        <!-- 快速加载指定场景 (moduleID) -->
+        <!-- 查询项目进度/结果 -->
         <div class="module-id-loader"
           style="margin-top: 24px; padding-top: 24px; border-top: 1px dashed rgba(255,255,255,0.1);">
-          <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 0.9rem;">快速加载已训练场景 (moduleID)</h4>
+          <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 0.9rem;">Check Status / View Result</h4>
           <div style="display: flex; gap: 10px;">
-            <input type="text" id="moduleIDInput" placeholder="输入 moduleID (如: ballroom_scene)"
+            <input type="text" id="moduleIDInput" placeholder="Enter Project Name"
               style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white;">
             <button class="btn btn-primary"
-              onclick="app.downloadAndDisplay(document.getElementById('moduleIDInput').value)"
-              style="padding: 8px 16px;">加载</button>
+              onclick="app.checkStatusAndLoad(document.getElementById('moduleIDInput').value)"
+              style="padding: 8px 16px;">Check</button>
           </div>
         </div>
       </div>
@@ -119,12 +110,24 @@
           <p class="status-text" id="statusText">Uploading video...</p>
         </div>
         <div class="progress-bar">
-          <div class="progress-fill" id="progressFill"> style="width: 0%;"</div>
+          <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
         </div>
         <p class="progress-percent" id="progressPercent">0%</p>
         <div class="job-info">
-          <p>Job ID: <span id="jobId">-</span></p>
+          <p>Project: <span id="jobId">-</span></p>
         </div>
+      </div>
+    </section>
+
+    <!-- Success Display (No Access Code) -->
+    <section class="access-code-section" id="accessCodeSuccess" style="display: none; margin-bottom: 20px;">
+      <div class="card success-card">
+        <h2 class="title-success">🎉 Processing Complete!</h2>
+        <p style="font-size: 1.1rem; margin-bottom: 10px; color: var(--text-primary);">Your project is ready.</p>
+        <div class="code-display" style="display: none;">
+          <!-- Hidden Access Code -->
+        </div>
+        <button class="btn btn-primary" onclick="viewer.loadScene(app.currentTask.id)" style="margin-top: 10px; width: 100%;">View Now</button>
       </div>
     </section>
 
@@ -152,24 +155,14 @@
                 <circle cx="12" cy="13" r="4"></circle>
               </svg>
             </button>
-            <button class="btn btn-secondary" onclick="app.startNew()">
-              New Upload
-            </button>
+            <button class="btn btn-secondary" onclick="app.startNew()">New Upload</button>
           </div>
-
-          <!-- 场景选择器 -->
           <div class="scene-selector" id="sceneSelector" style="display: none;">
             <div class="scene-selector-title">🎨 预设场景</div>
             <div class="scene-buttons">
-              <button class="scene-btn" onclick="viewer.loadDemoScene('bedroom')">
-                🛏️ 卧室
-              </button>
-              <button class="scene-btn" onclick="viewer.loadDemoScene('fireplace')">
-                🔥 壁炉
-              </button>
-              <button class="scene-btn" onclick="viewer.loadDemoScene('valley')">
-                🏔️ 山谷
-              </button>
+              <button class="scene-btn" onclick="viewer.loadDemoScene('bedroom')">🛏️ 卧室</button>
+              <button class="scene-btn" onclick="viewer.loadDemoScene('fireplace')">🔥 壁炉</button>
+              <button class="scene-btn" onclick="viewer.loadDemoScene('valley')">🏔️ 山谷</button>
             </div>
           </div>
         </div>
@@ -191,8 +184,6 @@
     </footer>
   </div>
 
-
-
   <!-- 通知系统 -->
   <div class="notification" id="notification"></div>
 
@@ -211,23 +202,20 @@
 
   <!-- 背景音乐 -->
   <audio id="bgMusic" loop autoplay>
-    <!-- 欢快愉悦的音乐 - 适合记录美好生活 -->
-    <!-- Kevin MacLeod - Wallpaper (轻快愉悦) -->
     <source src="music/happy-444082.mp3" type="audio/mpeg">
-    <!-- 备选: 本地音乐文件 src="music/background.mp3" -->
   </audio>
 
   <!-- Scripts -->
-  <!-- 使用 unpkg THREE.js r180 & Spark 0.1.10 -->
+  <!-- 使用本地库以加速加载 (防止国内访问 CDN 慢) -->
   <script type="importmap">
     {
         "imports": {
-            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.178.0/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.178.0/examples/jsm/",
-            "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.10/spark.module.js"
+            "three": "./js/libs/three.module.js",
+            "three/addons/": "./js/libs/three/examples/jsm/",
+            "@sparkjsdev/spark": "./js/libs/spark.module.js"
         }
     }
-    </script>
+  </script>
 
   <script type="module">
     import * as THREE from 'three';
@@ -236,7 +224,6 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { SplatMesh, dyno } from '@sparkjsdev/spark';
 
-    // 将 THREE, GLTFLoader, PLYLoader, OrbitControls, SplatMesh 和 dyno 暴露到全局作用域
     window.THREE = THREE;
     window.GLTFLoader = GLTFLoader;
     window.PLYLoader = PLYLoader;
@@ -245,10 +232,7 @@
     window.dyno = dyno;
 
     console.log('THREE.js r178 loaded:', THREE.REVISION);
-    console.log('OrbitControls loaded:', typeof OrbitControls !== 'undefined');
-    console.log('Spark SplatMesh loaded:', typeof SplatMesh !== 'undefined');
 
-    // 在 THREE 加载完成后再加载其他脚本
     const scripts = [
       'js/config.js',
       'js/api.js',
@@ -256,7 +240,8 @@
       'js/spark-spread.js',
       'js/tutorial-demo.js',
       'js/tutorial.js',
-      'js/app.js'
+      'js/app.js',
+      'js/distributed-upload.js'
     ];
 
     function loadScriptsSequentially(scriptUrls, index = 0) {
@@ -267,7 +252,7 @@
 
       const script = document.createElement('script');
       script.src = scriptUrls[index];
-      script.type = 'module'; // 设置为模块以支持 import/export
+      script.type = 'module';
       script.onload = () => {
         console.log(`Loaded: ${scriptUrls[index]}`);
         loadScriptsSequentially(scriptUrls, index + 1);
